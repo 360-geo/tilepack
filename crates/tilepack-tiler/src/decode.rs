@@ -15,6 +15,7 @@ pub fn decode_rgb(bytes: &[u8]) -> Result<RgbSlab, TilerError> {
     }
 }
 
+#[cfg(not(feature = "turbojpeg"))]
 fn decode_jpeg(bytes: &[u8]) -> Result<RgbSlab, TilerError> {
     use zune_jpeg::JpegDecoder;
     use zune_jpeg::zune_core::colorspace::ColorSpace;
@@ -29,6 +30,19 @@ fn decode_jpeg(bytes: &[u8]) -> Result<RgbSlab, TilerError> {
         return Err(TilerError::Io("jpeg did not decode to RGB".into()));
     }
     Ok(RgbSlab::from_data(w, h, pixels))
+}
+
+#[cfg(feature = "turbojpeg")]
+fn decode_jpeg(bytes: &[u8]) -> Result<RgbSlab, TilerError> {
+    let image = turbojpeg::decompress(bytes, turbojpeg::PixelFormat::RGB).map_err(|e| TilerError::Io(format!("turbojpeg decode: {e}")))?;
+    let (w, h) = (image.width as u32, image.height as u32);
+    // Repack from the decoder pitch to a tight w*3 stride.
+    let mut data = Vec::with_capacity((w as usize) * (h as usize) * 3);
+    for row in 0..image.height {
+        let start = row * image.pitch;
+        data.extend_from_slice(&image.pixels[start..start + (w as usize) * 3]);
+    }
+    Ok(RgbSlab::from_data(w, h, data))
 }
 
 fn decode_png(bytes: &[u8]) -> Result<RgbSlab, TilerError> {

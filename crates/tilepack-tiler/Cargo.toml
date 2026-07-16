@@ -14,6 +14,9 @@ default = ["repack", "convert"]
 repack = ["dep:zip", "dep:quick-xml"]
 # Source-image conversion: decode, equirect->cube remap, pyramid, tile encode.
 convert = ["dep:zune-jpeg", "dep:png", "dep:fast_image_resize", "dep:webp", "dep:pulp", "dep:bytemuck", "dep:rayon", "dep:depthpack"]
+# Swap JPEG decode to libjpeg-turbo (faster than the pure-Rust zune-jpeg;
+# needs a C toolchain + nasm). Native ingest pipelines want this.
+turbojpeg = ["dep:turbojpeg"]
 
 [dependencies]
 tilepack = { workspace = true }
@@ -28,6 +31,7 @@ pulp = { version = "0.21", optional = true }
 bytemuck = { version = "1", optional = true }
 rayon = { version = "1", optional = true }
 depthpack = { git = "https://github.com/360-geo/depthpack", optional = true }
+turbojpeg = { version = "1", optional = true }
 
 [dev-dependencies]
 zip = { version = "6", default-features = false }

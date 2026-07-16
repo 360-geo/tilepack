@@ -132,17 +132,19 @@ w(L) = ceil(root_w / 2^(levels − 1 − L))
 h(L) = ceil(root_h / 2^(levels − 1 − L))
 ```
 
-When any group covers level 0, writers MUST choose `levels` such that
-`max(w(0), h(0)) <= tile_size` — the coarsest level is a single tile
-per face. The primary display group SHOULD cover the full pyramid
-(`level_count = levels`) so it always has a single-tile overview. In a
-file whose only groups skip the coarse levels (for example a
-depth-only sibling with `level_count = 1`), `levels` describes the
-notional pyramid the finest level belongs to and the rule is
-vacuous. Cubemap writers SHOULD
-choose `root_w = tile_size × 2^(levels − 1)` so every level halves
-exactly and every tile is square; producers that resample into the cube
-anyway (equirect stitching) get this for free.
+When a **tiled** group covers level 0, writers MUST choose `levels`
+such that `max(w(0), h(0)) <= tile_size` — the coarsest level is a
+single tile per face. Untiled groups are exempt: they store one blob
+per face per level regardless of size, so the single-tile property
+holds trivially, and a depth-only untiled sibling may have `levels = 1`
+at full resolution. The primary display group SHOULD cover the full
+pyramid (`level_count = levels`) so it always has a single-tile
+overview. Cubemap writers SHOULD choose
+`root_w = tile_size × 2^(levels − 1)` so every level halves exactly and
+every tile is square; producers that resample into the cube anyway
+(equirect stitching) get this for free. When they do not, the coarsest
+level may be smaller than `tile_size`; readers MUST accept a coarsest
+level below `tile_size` (it follows directly from the pyramid formula).
 
 The tile grid at level `L` is `ceil(w(L) / tile_size)` columns by
 `ceil(h(L) / tile_size)` rows. Tiles have no overlap and no padding;
@@ -160,7 +162,10 @@ means the tile is absent.
 An absent tile is content, not an error: readers render it as nodata
 (raw-value groups) or leave it transparent (display groups), and
 completeness gates such as "coarse shell loaded" MUST count absent
-tiles as satisfied. Display imagery groups SHOULD be dense.
+tiles as satisfied. Display imagery groups SHOULD be dense. The
+canonical encoding of an absent tile is two equal adjacent offsets
+(`offset[i+1] == offset[i]`); runs of absent tiles are runs of equal
+offsets.
 
 Blobs have no alignment requirement and are stored back to back —
 lengths are derived by subtraction, so any padding between blobs would
@@ -202,19 +207,22 @@ and the view direction per face is
 
 | face  | direction (dx, dy, dz) |
 |-------|------------------------|
-| front | (−1,  a, −b) |
-| back  | ( 1, −a, −b) |
-| left  | (−a, −1, −b) |
-| right | ( a,  1, −b) |
-| down  | ( b,  a, −1) |
-| up    | ( b,  a,  1) |
+| front | (−1, −a, −b) |
+| back  | ( 1,  a, −b) |
+| left  | (−a,  1, −b) |
+| right | ( a, −1, −b) |
+| down  | ( b, −a, −1) |
+| up    | (−b, −a,  1) |
 
-The table is edge-consistent: the front face's right edge (`a = 1`)
-equals the right face's left edge (`a = −1`), the front face's top
-edge continues onto the up face, and so on around the cube. Writers
-producing faces from equirectangular sources MUST verify their
-longitude convention against this table end to end — a sign error here
-renders panoramas mirrored.
+This is the convention shipped by the reference converter and the
+consuming viewer; the reference implementation's remap is validated
+end-to-end against it (each face's in-plane gradients and center axis
+are checked so no mirror or axis swap slips through). The table is
+edge-consistent: the front face's right edge (`a = 1`) equals the right
+face's left edge (`a = −1`), the front face's top edge continues onto
+the up face, and so on around the cube. Writers producing faces from
+equirectangular sources MUST reproduce this convention exactly — a sign
+error renders panoramas mirrored.
 
 ## Codecs
 
@@ -229,7 +237,8 @@ as a hard error.
 raw gray (gray8, radiometry applies).
 
 **2 webp-split16.** Lossless WebP RGB carrying a u16 count per pixel as
-`count = R × 256 + G`, with B zero. Lossless WebP is byte-exact through
+`count = R × 256 + G`. Writers MUST set the B channel to zero; readers
+MUST ignore it. Lossless WebP is byte-exact through
 browser decode paths, and the reconstruction is linear in R and G, so
 GPU bilinear filtering of the split channels interpolates counts
 correctly — reconstruct first, then window and colormap. That holds
@@ -300,9 +309,13 @@ blob runs and rewriting the front matter; tiles are never re-encoded.
 
 ## Versioning
 
-The version byte increments on incompatible layout changes. Readers
-MUST reject unknown versions and `face_count` values other than 1
-and 6. A group with an unknown codec or semantic value is skipped, not
+The version byte increments only on incompatible **layout** changes.
+The codec, semantic, and sample registries are additive: new values are
+assigned without bumping the version, because the index geometry stays
+computable and readers skip groups they do not understand. A new image
+codec therefore ships as a new codec value, not a new format version.
+Readers MUST reject unknown versions and `face_count` values other than
+1 and 6. A group with an unknown codec or semantic value is skipped, not
 fatal — the index geometry is still computable from its descriptor, so
 the remaining groups stay readable and new band types can be added
 without breaking old readers. Reserved bytes and unknown flag bits

@@ -18,6 +18,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
 
+  test-turbojpeg:
+    name: Test (turbojpeg decode)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y nasm
+      - run: cargo test -p tilepack-tiler --features turbojpeg
+
   wasm:
     name: Build tilepack for wasm32-unknown-unknown
     runs-on: ubuntu-latest

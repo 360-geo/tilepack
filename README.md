@@ -77,8 +77,20 @@ rules, and writer requirements are in [SPEC.md](SPEC.md).
 
 ## Status
 
-Draft specification, version 1. Reference implementation (converter
-and repack tooling) in progress.
+Draft specification, version 1, with a working reference implementation:
+
+- `crates/tilepack` — the format core (reader, writer, layout, split16).
+  Pure Rust, compiles for `wasm32-unknown-unknown`, `thiserror` its only
+  dependency. This is what a viewer embeds.
+- `crates/tilepack-tiler` — native converter (equirect panorama to cubemap,
+  planar RGB, NIR/TIR split16, depth via [depthpack]), lossless DZP/SZI
+  repack, and composition (merge siblings, strip finest levels). Behind
+  `repack` / `convert` / `turbojpeg` feature flags.
+
+See [docs/integration.md](docs/integration.md) for wiring into an ingest
+pipeline and a viewer, and for where conversion time and SIMD actually go.
+
+[depthpack]: https://github.com/360-geo/depthpack
 
 ## Related
 
