@@ -17,9 +17,16 @@ The classic Deep Zoom approach — a DZI tile tree inside a ZIP — puts
 the directory at the end of the file and stores data offsets only in
 per-file local headers, so a web client pays a HEAD request plus a tail
 fetch before the first tile, and two range requests for every tile
-after that. Tile pixel sizes aren't recorded anywhere, level dimensions
-round unevenly, and the pyramid must be reverse-engineered from file
-path strings.
+after that. Deep Zoom does ship a manifest — the `.dzi` XML carries
+tile size, overlap, and full-resolution dimensions — but inside a ZIP
+it sits at an arbitrary offset only the directory can locate, one per
+cube face, each costing further range requests before the first pixel.
+And it lists no levels: which pyramid levels exist, and their tile
+grids, still comes from parsing the archive's file paths, where
+producers that emit partial or renumbered level sets make the standard
+DZI level math unreliable. So a range-reading client either pays extra
+round trips for a manifest that answers half its questions, or infers
+geometry from paths and decoded tiles.
 
 tilepack inverts that: a fixed header, the band descriptors, and a
 dense offset index sit at the front, so one small range request plans
