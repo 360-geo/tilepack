@@ -1,0 +1,18 @@
+[workspace]
+resolver = "3"
+members = ["crates/tilepack"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.87"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/360-geo/tilepack"
+
+[workspace.dependencies]
+tilepack = { path = "crates/tilepack", version = "0.1.0" }
+thiserror = "2"
+
+[profile.release]
+# Thin LTO is a cross-crate runtime win without fat-LTO build cost. Match
+# the deploy target's `target-cpu` in the environment, not here.
+lto = "thin"

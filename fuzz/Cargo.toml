@@ -1,0 +1,21 @@
+[package]
+name = "tilepack-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tilepack = { path = "../crates/tilepack" }
+
+[[bin]]
+name = "parse_front_matter"
+path = "fuzz_targets/parse_front_matter.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,16 @@
+[package]
+name = "tilepack"
+version = "0.1.0"
+description = "Header-first single-file container for tiled multi-band image pyramids, read over HTTP range requests. Pure Rust, wasm-compatible."
+keywords = ["tiles", "pyramid", "panorama", "wasm", "geospatial"]
+categories = ["encoding", "science::geo", "wasm"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
