@@ -15,20 +15,32 @@ use thiserror::Error;
 pub mod repack;
 
 #[cfg(feature = "convert")]
+pub mod compose;
+#[cfg(feature = "convert")]
 pub mod decode;
 #[cfg(feature = "convert")]
 pub mod encode;
 #[cfg(feature = "convert")]
 pub mod pano;
 #[cfg(feature = "convert")]
+pub mod planar;
+#[cfg(feature = "convert")]
 pub mod pyramid;
+#[cfg(feature = "convert")]
+pub mod raster;
 #[cfg(feature = "convert")]
 pub mod remap;
 #[cfg(feature = "convert")]
 pub mod slab;
 
 #[cfg(feature = "convert")]
+pub use compose::{merge_groups, strip_finest_levels};
+#[cfg(feature = "convert")]
 pub use pano::{PanoOptions, convert_equirect, convert_equirect_bytes};
+#[cfg(feature = "convert")]
+pub use planar::{PlanarOptions, convert_planar, convert_planar_bytes};
+#[cfg(feature = "convert")]
+pub use raster::{DepthOptions, Radiometrics, RasterOptions, convert_depth_equirect, convert_depth_planar, convert_raster_split16};
 #[cfg(feature = "convert")]
 pub use slab::{RgbSlab, U16Slab};
 

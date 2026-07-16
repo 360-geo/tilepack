@@ -13,7 +13,7 @@ default = ["repack", "convert"]
 # Lossless remux of existing DZP/SZI (Deep Zoom in ZIP) archives into tilepack.
 repack = ["dep:zip", "dep:quick-xml"]
 # Source-image conversion: decode, equirect->cube remap, pyramid, tile encode.
-convert = ["dep:zune-jpeg", "dep:png", "dep:fast_image_resize", "dep:webp", "dep:pulp", "dep:bytemuck", "dep:rayon"]
+convert = ["dep:zune-jpeg", "dep:png", "dep:fast_image_resize", "dep:webp", "dep:pulp", "dep:bytemuck", "dep:rayon", "dep:depthpack"]
 
 [dependencies]
 tilepack = { workspace = true }
@@ -27,6 +27,7 @@ webp = { version = "0.3", optional = true }
 pulp = { version = "0.21", optional = true }
 bytemuck = { version = "1", optional = true }
 rayon = { version = "1", optional = true }
+depthpack = { git = "https://github.com/360-geo/depthpack", optional = true }
 
 [dev-dependencies]
 zip = { version = "6", default-features = false }
