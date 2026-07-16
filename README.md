@@ -11,7 +11,7 @@ bands carry their radiometric mapping (scale, offset, unit, nodata) so
 viewers can window and colormap on the GPU instead of shipping baked
 display pixels.
 
-## Why not DZI-in-ZIP, PMTiles, or KTX2
+## Why not DZI-in-ZIP, COG, PMTiles, or KTX2
 
 The classic Deep Zoom approach — a DZI tile tree inside a ZIP — puts
 the directory at the end of the file and stores data offsets only in
@@ -25,6 +25,19 @@ tilepack inverts that: a fixed header, the band descriptors, and a
 dense offset index sit at the front, so one small range request plans
 everything, every tile is one request, and all tile dimensions are
 exact from the header alone.
+
+Cloud Optimized GeoTIFF is the right wheel for map-space rasters —
+orthomosaics, elevation models — and tilepack does not compete there.
+It fails for camera-space photo assets on structure, not metadata:
+TIFF has no cube faces, compression is a per-image property so one
+file cannot mix JPEG color with a depth codec, and the best raster
+codec TIFF offers for depth (LERC) is twice the size of
+[depthpack](https://github.com/360-geo/depthpack) lossless. A COG
+carrying private compression codes is unreadable to the GIS ecosystem
+anyway — and a cube face or an oblique frame has a pose, not a
+geotransform, so that ecosystem has nothing to open it *with*. A COG
+only your own reader consumes is just a custom format wearing TIFF's
+parsing burden.
 
 [PMTiles](https://github.com/protomaps/PMTiles) solves the same
 transport problem for z/x/y map tiles but has no cube faces, no bands,

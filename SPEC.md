@@ -99,6 +99,11 @@ count × scale + offset, and `unit` labels the result (`"m"`, `"K"`, …)
 without ever being interpreted by the container. Display imagery
 groups (rgb8) write all radiometry fields as zero.
 
+Counts are u16, so `scale` trades range against precision: a 1 mm
+lattice reaches 65.5 m, 1 cm reaches 655 m, 0.01 K reaches 655 K.
+Writers pick the coarsest scale whose quantization error sits below
+the sensor's own error floor.
+
 For `depthpack` groups the radiometry fields MUST equal the
 corresponding fields in every blob's own header; the duplication lets a
 client configure units and display windows before fetching any tile.
@@ -112,7 +117,10 @@ wrong.
 The `untiled` flag replaces the tile grid with exactly one blob per
 face per level, covering the whole face. Use it when clients always
 consume the band whole (for example a panorama depth field fetched once
-for reprojection).
+for reprojection). Untiled trades request count for decode
+concentration — one blob for a full-resolution panorama field is a
+CPU-scale decode, so single-threaded clients should hand it to a
+worker or thread pool rather than decode inline.
 
 ## Pyramid geometry
 
@@ -124,8 +132,14 @@ w(L) = ceil(root_w / 2^(levels − 1 − L))
 h(L) = ceil(root_h / 2^(levels − 1 − L))
 ```
 
-Writers MUST choose `levels` such that `max(w(0), h(0)) <= tile_size` —
-the coarsest level is a single tile per face. Cubemap writers SHOULD
+When any group covers level 0, writers MUST choose `levels` such that
+`max(w(0), h(0)) <= tile_size` — the coarsest level is a single tile
+per face. The primary display group SHOULD cover the full pyramid
+(`level_count = levels`) so it always has a single-tile overview. In a
+file whose only groups skip the coarse levels (for example a
+depth-only sibling with `level_count = 1`), `levels` describes the
+notional pyramid the finest level belongs to and the rule is
+vacuous. Cubemap writers SHOULD
 choose `root_w = tile_size × 2^(levels − 1)` so every level halves
 exactly and every tile is square; producers that resample into the cube
 anyway (equirect stitching) get this for free.
@@ -142,6 +156,16 @@ Immediately after the descriptors: an array of u64 absolute file
 offsets, one per tile in canonical order, plus one final end offset.
 The byte length of tile `i` is `offset[i+1] − offset[i]`; zero length
 means the tile is absent.
+
+An absent tile is content, not an error: readers render it as nodata
+(raw-value groups) or leave it transparent (display groups), and
+completeness gates such as "coarse shell loaded" MUST count absent
+tiles as satisfied. Display imagery groups SHOULD be dense.
+
+Blobs have no alignment requirement and are stored back to back —
+lengths are derived by subtraction, so any padding between blobs would
+be miscounted into a tile's length. Alignment buys nothing here: HTTP
+ranges are byte-granular and every codec accepts a byte slice.
 
 Canonical order:
 
@@ -164,29 +188,40 @@ band's coarsest levels.
 
 ## Cubemap convention
 
-Right-handed, Z-up. Pixel `(col, row)` of a face maps to face
-coordinates
+Directions are expressed in the panorama's local frame: right-handed,
+Z up. How that frame is oriented in the world (heading, pose) is
+asset-level metadata outside the container. Pixel `(col, row)` of a
+face, with row 0 at the top of the image, maps to face coordinates
 
 ```text
-x = 2 (col + 0.5) / w − 1
-y = 2 (row + 0.5) / h − 1
+a = 2 (col + 0.5) / w − 1
+b = 2 (row + 0.5) / h − 1
 ```
 
-with row 0 at the top of the image, and the view direction per face is
+and the view direction per face is
 
 | face  | direction (dx, dy, dz) |
 |-------|------------------------|
-| front | (−1, −x, −y) |
-| back  | ( 1,  x, −y) |
-| left  | (−x,  1, −y) |
-| right | ( x, −1, −y) |
-| down  | ( y, −x, −1) |
-| up    | (−y, −x,  1) |
+| front | (−1,  a, −b) |
+| back  | ( 1, −a, −b) |
+| left  | (−a, −1, −b) |
+| right | ( a,  1, −b) |
+| down  | ( b,  a, −1) |
+| up    | ( b,  a,  1) |
 
-For equirect-derived content, longitude `atan2(dy, dx)` and latitude
-`acos(dz / |d|)` recover the source mapping.
+The table is edge-consistent: the front face's right edge (`a = 1`)
+equals the right face's left edge (`a = −1`), the front face's top
+edge continues onto the up face, and so on around the cube. Writers
+producing faces from equirectangular sources MUST verify their
+longitude convention against this table end to end — a sign error here
+renders panoramas mirrored.
 
 ## Codecs
+
+Every blob, whatever its codec, MUST decode to exactly the tile
+dimensions implied by the header — clients never decode a tile to
+learn its size, so a mismatch is a writer bug and readers MAY treat it
+as a hard error.
 
 **0 jpeg.** Baseline JPEG, sRGB display imagery. `sample` rgb8.
 
@@ -197,12 +232,15 @@ raw gray (gray8, radiometry applies).
 `count = R × 256 + G`, with B zero. Lossless WebP is byte-exact through
 browser decode paths, and the reconstruction is linear in R and G, so
 GPU bilinear filtering of the split channels interpolates counts
-correctly — reconstruct first, then window and colormap. Suited to
-continuous fields (near-infrared, thermal).
+correctly — reconstruct first, then window and colormap. That holds
+only where the whole 2×2 filter footprint is valid: a nodata sentinel
+inside the footprint bleeds into the interpolated count, so groups
+that use nodata need nearest sampling or nodata-aware manual
+filtering near holes. Suited to continuous fields (near-infrared,
+thermal).
 
 **3 depthpack.** One [depthpack](https://github.com/360-geo/depthpack)
-blob per tile, each a self-describing `DPCK` unit whose dimensions MUST
-match the tile dimensions implied by the header. Decodes to raw u16
+blob per tile, each a self-describing `DPCK` unit. Decodes to raw u16
 counts or directly to physical f32 with NaN nodata. Suited to fields
 with hard discontinuities that must never be interpolated across —
 depth above all — where clients sample nearest or apply their own
@@ -219,14 +257,29 @@ edge-aware filtering.
 
 ## HTTP access pattern
 
-Informative. A client opens a tilepack with a single
-`Range: bytes=0-16383` request; total file size comes from the
-`Content-Range` response header. For typical files the header,
-descriptors, index, and the primary band's coarse levels all fit in
-that first response; when the index is longer, one follow-up range
-completes it. Every subsequent tile is exactly one range request at a
-known offset, and requests for adjacent tiles coalesce into spans
-because canonical order keeps them contiguous.
+Informative. The front matter of a file with `g` groups and `T` total
+tiles is exactly
+
+```text
+24 + 48 g + 8 (T + 1) bytes
+```
+
+A single-group cubemap with 8192 px faces at tile size 512 has
+T = 2046 and 16,448 bytes of front matter — just over 16 KB — and a
+16384 px cubemap has a ~64 KB index, so clients SHOULD open with a
+64 KB range request (`Range: bytes=0-65535`); total file size comes
+from the `Content-Range` response header. When the front matter
+extends past the opening request, one follow-up range completes it.
+Tile blobs themselves rarely ride along in the opening request — a
+512 px JPEG tile is tens of kilobytes — but because groups are ordered
+by display priority, the primary band's coarsest tiles sit immediately
+after the front matter and are the natural first data fetch.
+
+Every tile is exactly one range request at a known offset. Canonical
+order keeps a level's tiles contiguous per row, so clients can merge
+adjacent index entries into span requests; when doing so, keep the
+request granularity consistent between prefetch and demand paths —
+byte-identical ranges are what HTTP caches deduplicate.
 
 ## Sibling files
 
@@ -242,6 +295,9 @@ blob runs and rewriting the front matter; tiles are never re-encoded.
 ## Versioning
 
 The version byte increments on incompatible layout changes. Readers
-MUST reject unknown versions and unknown codec values, and MUST ignore
-reserved bytes and unknown flag bits, which are available for
-backward-compatible extension.
+MUST reject unknown versions and `face_count` values other than 1
+and 6. A group with an unknown codec or semantic value is skipped, not
+fatal — the index geometry is still computable from its descriptor, so
+the remaining groups stay readable and new band types can be added
+without breaking old readers. Reserved bytes and unknown flag bits
+MUST be ignored and are available for backward-compatible extension.
