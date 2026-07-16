@@ -79,7 +79,7 @@ dimensions describe each face.
 | offset | size | field |
 |--------|------|-------|
 | 0      | 1    | semantic — 0 rgb, 1 nir, 2 tir, 3 depth, 240–255 private use |
-| 1      | 1    | codec — 0 jpeg, 1 webp, 2 webp-split16, 3 depthpack |
+| 1      | 1    | codec — 0 jpeg, 1 webp, 2 webp-split16, 3 depthpack, 4 jpegxl |
 | 2      | 1    | sample — 0 rgb8, 1 gray8, 2 u16 |
 | 3      | 1    | flags — bit 0 untiled, bit 1 nearest downsample |
 | 4      | 1    | level_count — 1..=levels, counted from the finest level |
@@ -245,6 +245,12 @@ counts or directly to physical f32 with NaN nodata. Suited to fields
 with hard discontinuities that must never be interpolated across —
 depth above all — where clients sample nearest or apply their own
 edge-aware filtering.
+
+**4 jpegxl.** JPEG XL display imagery (`sample` rgb8 or gray8).
+Reserved ahead of broad browser adoption; readers on platforms without
+a decoder skip the group per the versioning rules. JPEG XL can
+losslessly re-compress existing JPEG tiles, so a repack MAY transcode
+a jpeg group to jpegxl without generation loss.
 
 ## Downsampling rules for writers
 
