@@ -1,5 +1,10 @@
 # tilepack
 
+[![CI](https://github.com/360-geo/tilepack/actions/workflows/ci.yaml/badge.svg)](https://github.com/360-geo/tilepack/actions/workflows/ci.yaml)
+[![Crates.io](https://img.shields.io/crates/v/tilepack.svg)](https://crates.io/crates/tilepack)
+[![docs.rs](https://docs.rs/tilepack/badge.svg)](https://docs.rs/tilepack)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 Single-file, header-first container for tiled multi-band image
 pyramids, designed for HTTP range reads from immutable object storage.
 
