@@ -2,7 +2,9 @@
 
 use tilepack::layout::{Face, TileLoc};
 use tilepack::{Codec, SampleType, Semantic, TilepackView, split16_unpack_vec};
-use tilepack_tiler::{DepthOptions, Radiometrics, RasterOptions, U16Slab, convert_depth_equirect, convert_raster_split16};
+use tilepack_tiler::{
+    DepthOptions, Radiometrics, RasterOptions, U16Slab, convert_depth_equirect, convert_raster_gray8, convert_raster_split16,
+};
 
 fn ramp_u16(w: u32, h: u32, nodata_stripe: bool) -> U16Slab {
     let mut slab = U16Slab::new(w, h);
@@ -64,6 +66,55 @@ fn depth_equirect_roundtrips_through_depthpack() {
 }
 
 #[test]
+fn nir_gray8_lossless_roundtrips_at_finest_level() {
+    let slab = ramp_u16(300, 200, false);
+    // Values already fit in 8 bits via the ramp modulo below.
+    let slab = U16Slab::from_data(slab.w, slab.h, slab.data.iter().map(|v| v % 256).collect());
+    let opts = RasterOptions {
+        tile_size: 128,
+        semantic: Semantic::Nir,
+        radiometry: Radiometrics {
+            scale: 1.0,
+            offset: 0.0,
+            unit: "".into(),
+            nodata: 65535,
+            min: 0,
+            max: 255,
+        },
+        gray8_quality: None,
+    };
+    let tpc = convert_raster_gray8(&slab, &opts).unwrap();
+
+    let view = TilepackView::new(&tpc).unwrap();
+    let layout = &view.fm.layout;
+    let g = &layout.groups()[0];
+    assert_eq!(g.semantic, Semantic::Nir);
+    assert_eq!(g.codec, Codec::Webp);
+    assert_eq!(g.sample, SampleType::Gray8);
+
+    let finest = layout.header().levels - 1;
+    let (cols, rows) = layout.grid(finest);
+    for row in 0..rows {
+        for col in 0..cols {
+            let loc = TileLoc::new(0, finest, Face::Front, row, col);
+            let blob = view.tile(loc).unwrap();
+            let decoded = webp::Decoder::new(blob).decode().expect("decode gray8 webp");
+            let (tw, th) = layout.tile_dims(0, finest, col, row);
+            for ty in 0..th {
+                for tx in 0..tw {
+                    let sx = col * 128 + tx;
+                    let sy = row * 128 + ty;
+                    let want = slab.data[(sy as usize) * slab.w as usize + sx as usize] as u8;
+                    // decoded is RGB with all channels equal to the gray value.
+                    let got = decoded.as_ref()[((ty as usize) * tw as usize + tx as usize) * 3];
+                    assert_eq!(got, want, "gray8 lossless at {sx},{sy}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn nir_split16_is_lossless_at_finest_level() {
     let slab = ramp_u16(300, 200, false);
     let opts = RasterOptions {
@@ -77,6 +128,7 @@ fn nir_split16_is_lossless_at_finest_level() {
             min: 0,
             max: 65535,
         },
+        gray8_quality: None,
     };
     let tpc = convert_raster_split16(&slab, &opts).unwrap();
 

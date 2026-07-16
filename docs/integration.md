@@ -69,6 +69,25 @@ fetching a tile. For bulk native encoding, enable `depthpack`'s `zstd-c`
 feature from the workspace — roughly 2.6x faster encode, smaller blobs; decode
 stays pure Rust.
 
+## NIR / TIR bit depth and codec choice
+
+Match the codec to the sample depth:
+
+- 16-bit rasters (`convert_raster_split16`) use `webp-split16` — lossless, the
+  full u16 range, filterable after reconstruction.
+- 8-bit rasters (`convert_raster_gray8`) use a `gray8` WebP. On real 8-bit
+  aerial NIR, split16 and gray8 come out the same size lossless (the split16
+  high-byte plane is all zeros and compresses to nothing), but gray8 is the
+  honest sample type and unlocks a lossy option.
+
+Lossless keeps radiometric values exact for analysis bands (NDVI and the like).
+For a display-only NIR, `RasterOptions.gray8_quality = Some(q)` encodes lossy —
+on a 100 MP nadir that took the NIR band from ~81 MB to ~23 MB at q80. Native
+4-band GeoTIFF ingestion is not built in; split the bands upstream (for example
+`gdal_translate -b 1 -b 2 -b 3` and `-b 4`) and feed the RGB and NIR rasters to
+`convert_planar` and the raster converters, then `merge_groups` them into one
+file.
+
 ## argos viewer
 
 The reader is the wasm-safe `tilepack` core. The app does its own HTTP:

@@ -40,7 +40,9 @@ pub use pano::{PanoOptions, convert_equirect, convert_equirect_bytes};
 #[cfg(feature = "convert")]
 pub use planar::{PlanarOptions, convert_planar, convert_planar_bytes};
 #[cfg(feature = "convert")]
-pub use raster::{DepthOptions, Radiometrics, RasterOptions, convert_depth_equirect, convert_depth_planar, convert_raster_split16};
+pub use raster::{
+    DepthOptions, Radiometrics, RasterOptions, convert_depth_equirect, convert_depth_planar, convert_raster_gray8, convert_raster_split16,
+};
 #[cfg(feature = "convert")]
 pub use slab::{RgbSlab, U16Slab};
 

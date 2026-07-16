@@ -7,7 +7,7 @@ use tilepack::descriptor::{Codec, GroupDescriptor, GroupFlags, Radiometry, Sampl
 use tilepack::layout::{Face, TileLoc};
 use tilepack::{Writer, WriterParams, split16_pack_vec};
 
-use crate::encode::encode_webp_lossless;
+use crate::encode::{encode_webp_gray8, encode_webp_lossless};
 use crate::slab::{RgbSlab, U16Slab};
 use crate::{TilerError, levels_for};
 
@@ -41,6 +41,9 @@ pub struct RasterOptions {
     pub tile_size: u16,
     pub semantic: Semantic,
     pub radiometry: Radiometrics,
+    /// gray8 encode quality: `None` lossless (exact), `Some(q)` lossy. Ignored
+    /// by split16, which is always lossless.
+    pub gray8_quality: Option<f32>,
 }
 
 /// Options for a depth raster.
@@ -186,6 +189,60 @@ pub fn convert_raster_split16(slab: &U16Slab, opts: &RasterOptions) -> Result<Ve
             let rgb = split16_pack_vec(&tile.data);
             let slab = RgbSlab::from_data(tile.w, tile.h, rgb);
             let bytes = encode_webp_lossless(&slab)?;
+            Ok((ordinal, bytes))
+        })
+        .collect();
+    for (ordinal, bytes) in encoded? {
+        writer.set_ordinal(ordinal, bytes)?;
+    }
+    writer.finish().map_err(Into::into)
+}
+
+/// Convert an 8-bit NIR or TIR raster into a planar `gray8` WebP tilepack.
+/// Values must fit in 8 bits; the sample type is `gray8` and radiometry
+/// applies. Smaller than split16 for genuinely 8-bit data, which has no
+/// high byte to carry.
+pub fn convert_raster_gray8(slab: &U16Slab, opts: &RasterOptions) -> Result<Vec<u8>, TilerError> {
+    let tile_size = opts.tile_size;
+    let levels = levels_for(slab.w, slab.h, tile_size);
+    let group = GroupDescriptor {
+        semantic: opts.semantic,
+        codec: Codec::Webp,
+        sample: SampleType::Gray8,
+        flags: GroupFlags::default(),
+        level_count: levels,
+        radiometry: opts.radiometry.descriptor(),
+    };
+    let params = WriterParams {
+        face_count: 1,
+        levels,
+        tile_size,
+        root_w: slab.w,
+        root_h: slab.h,
+    };
+    let mut writer = Writer::new(params, vec![group])?;
+    let layout = writer.layout().clone();
+
+    let dims: Vec<(u32, u32)> = (0..levels).map(|l| layout.level_dims(l)).collect();
+    let pyramid = build_u16_pyramid(slab.clone(), &dims, Downsample::Mean(opts.radiometry.nodata));
+
+    let mut work = Vec::new();
+    for level in 0..levels {
+        let (cols, rows) = layout.grid(level);
+        for row in 0..rows {
+            for col in 0..cols {
+                let ordinal = layout.tile_ordinal(TileLoc::new(0, level, Face::Front, row, col)).unwrap();
+                work.push((ordinal, level, col, row));
+            }
+        }
+    }
+
+    let encoded: Result<Vec<(usize, Vec<u8>)>, TilerError> = work
+        .par_iter()
+        .map(|&(ordinal, level, col, row)| {
+            let tile = crop_u16_tile(&pyramid[level as usize], col, row, tile_size as u32);
+            let gray: Vec<u8> = tile.data.iter().map(|&v| v as u8).collect();
+            let bytes = encode_webp_gray8(&gray, tile.w, tile.h, opts.gray8_quality)?;
             Ok((ordinal, bytes))
         })
         .collect();
