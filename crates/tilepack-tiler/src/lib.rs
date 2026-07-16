@@ -14,6 +14,24 @@ use thiserror::Error;
 #[cfg(feature = "repack")]
 pub mod repack;
 
+#[cfg(feature = "convert")]
+pub mod decode;
+#[cfg(feature = "convert")]
+pub mod encode;
+#[cfg(feature = "convert")]
+pub mod pano;
+#[cfg(feature = "convert")]
+pub mod pyramid;
+#[cfg(feature = "convert")]
+pub mod remap;
+#[cfg(feature = "convert")]
+pub mod slab;
+
+#[cfg(feature = "convert")]
+pub use pano::{PanoOptions, convert_equirect, convert_equirect_bytes};
+#[cfg(feature = "convert")]
+pub use slab::{RgbSlab, U16Slab};
+
 /// Errors from tiler operations.
 #[derive(Error, Debug)]
 pub enum TilerError {

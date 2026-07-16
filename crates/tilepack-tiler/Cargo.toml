@@ -9,15 +9,24 @@ repository.workspace = true
 publish = false
 
 [features]
-default = ["repack"]
+default = ["repack", "convert"]
 # Lossless remux of existing DZP/SZI (Deep Zoom in ZIP) archives into tilepack.
 repack = ["dep:zip", "dep:quick-xml"]
+# Source-image conversion: decode, equirect->cube remap, pyramid, tile encode.
+convert = ["dep:zune-jpeg", "dep:png", "dep:fast_image_resize", "dep:webp", "dep:pulp", "dep:bytemuck", "dep:rayon"]
 
 [dependencies]
 tilepack = { workspace = true }
 thiserror = { workspace = true }
 zip = { version = "6", default-features = false, features = ["deflate"], optional = true }
 quick-xml = { version = "0.37", optional = true }
+zune-jpeg = { version = "0.4", optional = true }
+png = { version = "0.17", optional = true }
+fast_image_resize = { version = "5", optional = true }
+webp = { version = "0.3", optional = true }
+pulp = { version = "0.21", optional = true }
+bytemuck = { version = "1", optional = true }
+rayon = { version = "1", optional = true }
 
 [dev-dependencies]
 zip = { version = "6", default-features = false }
