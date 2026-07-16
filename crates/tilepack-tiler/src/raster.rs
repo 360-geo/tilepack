@@ -7,7 +7,7 @@ use tilepack::descriptor::{Codec, GroupDescriptor, GroupFlags, Radiometry, Sampl
 use tilepack::layout::{Face, TileLoc};
 use tilepack::{Writer, WriterParams, split16_pack_vec};
 
-use crate::encode::{encode_webp_gray8, encode_webp_lossless};
+use crate::encode::{Gray8Encoding, encode_webp_gray8, encode_webp_lossless};
 use crate::slab::{RgbSlab, U16Slab};
 use crate::{TilerError, levels_for};
 
@@ -41,9 +41,9 @@ pub struct RasterOptions {
     pub tile_size: u16,
     pub semantic: Semantic,
     pub radiometry: Radiometrics,
-    /// gray8 encode quality: `None` lossless (exact), `Some(q)` lossy. Ignored
-    /// by split16, which is always lossless.
-    pub gray8_quality: Option<f32>,
+    /// How the gray8 path encodes tiles. Ignored by split16, which is always
+    /// lossless.
+    pub gray8: Gray8Encoding,
 }
 
 /// Options for a depth raster.
@@ -242,7 +242,7 @@ pub fn convert_raster_gray8(slab: &U16Slab, opts: &RasterOptions) -> Result<Vec<
         .map(|&(ordinal, level, col, row)| {
             let tile = crop_u16_tile(&pyramid[level as usize], col, row, tile_size as u32);
             let gray: Vec<u8> = tile.data.iter().map(|&v| v as u8).collect();
-            let bytes = encode_webp_gray8(&gray, tile.w, tile.h, opts.gray8_quality)?;
+            let bytes = encode_webp_gray8(&gray, tile.w, tile.h, opts.gray8)?;
             Ok((ordinal, bytes))
         })
         .collect();

@@ -81,7 +81,7 @@ fn nir_gray8_lossless_roundtrips_at_finest_level() {
             min: 0,
             max: 255,
         },
-        gray8_quality: None,
+        gray8: tilepack_tiler::Gray8Encoding::Lossless,
     };
     let tpc = convert_raster_gray8(&slab, &opts).unwrap();
 
@@ -115,6 +115,59 @@ fn nir_gray8_lossless_roundtrips_at_finest_level() {
 }
 
 #[test]
+fn nir_gray8_near_lossless_error_is_bounded() {
+    use tilepack_tiler::Gray8Encoding;
+    // A smooth 8-bit ramp so near-lossless has structure to exploit.
+    let (w, h) = (256u32, 256u32);
+    let mut slab = U16Slab::new(w, h);
+    for y in 0..h {
+        for x in 0..w {
+            slab.data[(y * w + x) as usize] = ((x / 2 + y / 2) % 256) as u16;
+        }
+    }
+    let opts = RasterOptions {
+        tile_size: 128,
+        semantic: Semantic::Nir,
+        radiometry: Radiometrics {
+            scale: 1.0,
+            offset: 0.0,
+            unit: "".into(),
+            nodata: 65535,
+            min: 0,
+            max: 255,
+        },
+        gray8: Gray8Encoding::NearLossless(60),
+    };
+    let tpc = convert_raster_gray8(&slab, &opts).unwrap();
+
+    let view = TilepackView::new(&tpc).unwrap();
+    let layout = &view.fm.layout;
+    let finest = layout.header().levels - 1;
+    let (cols, rows) = layout.grid(finest);
+    let mut max_err = 0i32;
+    for row in 0..rows {
+        for col in 0..cols {
+            let loc = TileLoc::new(0, finest, Face::Front, row, col);
+            let blob = view.tile(loc).unwrap();
+            let decoded = webp::Decoder::new(blob).decode().unwrap();
+            let (tw, th) = layout.tile_dims(0, finest, col, row);
+            for ty in 0..th {
+                for tx in 0..tw {
+                    let sx = col * 128 + tx;
+                    let sy = row * 128 + ty;
+                    let want = slab.data[(sy * w + sx) as usize] as i32;
+                    let got = decoded.as_ref()[((ty as usize) * tw as usize + tx as usize) * 3] as i32;
+                    max_err = max_err.max((got - want).abs());
+                }
+            }
+        }
+    }
+    // Near-lossless bounds the per-pixel error to a small delta, unlike DCT
+    // lossy. The exact bound depends on the level; assert it stays tight.
+    assert!(max_err <= 24, "near-lossless max per-pixel error {max_err} exceeds bound");
+}
+
+#[test]
 fn nir_split16_is_lossless_at_finest_level() {
     let slab = ramp_u16(300, 200, false);
     let opts = RasterOptions {
@@ -128,7 +181,7 @@ fn nir_split16_is_lossless_at_finest_level() {
             min: 0,
             max: 65535,
         },
-        gray8_quality: None,
+        gray8: tilepack_tiler::Gray8Encoding::Lossless,
     };
     let tpc = convert_raster_split16(&slab, &opts).unwrap();
 

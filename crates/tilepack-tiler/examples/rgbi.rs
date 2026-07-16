@@ -4,7 +4,7 @@
 //! `cargo run --release -p tilepack-tiler --example rgbi -- rgb.png nir.png out.tpc [tile_size]`
 //!
 //! RGB goes through the planar WebP path; NIR (here 8-bit, promoted to u16)
-//! through the split16 raster path with an unused nodata sentinel so no valid
+//! through the gray8 raster path with an unused nodata sentinel so no valid
 //! pixel is dropped. The two same-geometry groups are merged into one file.
 
 use std::process::exit;
@@ -12,17 +12,24 @@ use std::time::Instant;
 
 use tilepack::Semantic;
 use tilepack_tiler::decode::decode_rgb;
-use tilepack_tiler::{PlanarOptions, Radiometrics, RasterOptions, U16Slab, convert_planar, convert_raster_gray8, merge_groups};
+use tilepack_tiler::{
+    Gray8Encoding, PlanarOptions, Radiometrics, RasterOptions, U16Slab, convert_planar, convert_raster_gray8, merge_groups,
+};
 
 fn main() {
     let mut args = std::env::args().skip(1);
     let (Some(rgb_path), Some(nir_path), Some(out_path)) = (args.next(), args.next(), args.next()) else {
-        eprintln!("usage: rgbi <rgb.png> <nir.png> <out.tpc> [tile_size] [nir_quality]");
-        eprintln!("  nir_quality: omit for lossless, or 0-100 for lossy NIR");
+        eprintln!("usage: rgbi <rgb.png> <nir.png> <out.tpc> [tile_size] [nir_near_lossless]");
+        eprintln!("  nir_near_lossless: WebP near-lossless level 0-100 (default 60; 100 = exact lossless)");
         exit(2);
     };
     let tile_size: u16 = args.next().and_then(|s| s.parse().ok()).unwrap_or(512);
-    let nir_quality: Option<f32> = args.next().and_then(|s| s.parse().ok());
+    let near_level: u8 = args.next().and_then(|s| s.parse().ok()).unwrap_or(60);
+    let nir_encoding = if near_level >= 100 {
+        Gray8Encoding::Lossless
+    } else {
+        Gray8Encoding::NearLossless(near_level)
+    };
 
     let start = Instant::now();
 
@@ -56,7 +63,7 @@ fn main() {
                 min: 0,
                 max: 255,
             },
-            gray8_quality: nir_quality,
+            gray8: nir_encoding,
         },
     )
     .unwrap_or_else(|e| fail("convert nir", e));

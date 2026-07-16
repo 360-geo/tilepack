@@ -18,12 +18,24 @@ pub fn encode_webp_lossless(slab: &RgbSlab) -> Result<Vec<u8>, TilerError> {
     Ok(mem.to_vec())
 }
 
+/// How to encode an 8-bit raw raster (NIR / TIR) as WebP.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Gray8Encoding {
+    /// Exact, bit-for-bit. Largest; use for calibrated analysis bands.
+    Lossless,
+    /// WebP near-lossless preprocessing, level `0..=100` (100 = exact,
+    /// lower = smaller). Decodes as an ordinary lossless WebP — no special
+    /// decoder — but bounds the per-pixel error, roughly halving size at a
+    /// small controllable error. The recommended default for NIR / TIR.
+    NearLossless(u8),
+    /// Lossy WebP at quality `0..=100`. Smallest; display bands only.
+    Lossy(f32),
+}
+
 /// Encode an 8-bit single-channel plane as WebP. libwebp has no luma input, so
 /// the value is written to all three channels; under lossless the two
-/// redundant planes cost almost nothing. `quality` `None` is lossless (exact
-/// values, for analysis bands); `Some(q)` is lossy (far smaller, for display
-/// bands where radiometric exactness is not required).
-pub fn encode_webp_gray8(gray: &[u8], w: u32, h: u32, quality: Option<f32>) -> Result<Vec<u8>, TilerError> {
+/// redundant planes cost almost nothing.
+pub fn encode_webp_gray8(gray: &[u8], w: u32, h: u32, mode: Gray8Encoding) -> Result<Vec<u8>, TilerError> {
     let mut rgb = vec![0u8; gray.len() * 3];
     for (v, px) in gray.iter().zip(rgb.chunks_exact_mut(3)) {
         px[0] = *v;
@@ -31,9 +43,18 @@ pub fn encode_webp_gray8(gray: &[u8], w: u32, h: u32, quality: Option<f32>) -> R
         px[2] = *v;
     }
     let encoder = webp::Encoder::from_rgb(&rgb, w, h);
-    let mem = match quality {
-        None => encoder.encode_lossless(),
-        Some(q) => encoder.encode(q),
+    let mem = match mode {
+        Gray8Encoding::Lossless => encoder.encode_lossless(),
+        Gray8Encoding::Lossy(q) => encoder.encode(q),
+        Gray8Encoding::NearLossless(level) => {
+            let mut config = webp::WebPConfig::new().map_err(|_| TilerError::Io("webp config init".into()))?;
+            config.lossless = 1;
+            config.quality = 100.0;
+            config.near_lossless = level.min(100) as i32;
+            encoder
+                .encode_advanced(&config)
+                .map_err(|e| TilerError::Io(format!("webp near-lossless: {e:?}")))?
+        }
     };
     Ok(mem.to_vec())
 }

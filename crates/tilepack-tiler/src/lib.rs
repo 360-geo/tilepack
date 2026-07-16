@@ -36,6 +36,8 @@ pub mod slab;
 #[cfg(feature = "convert")]
 pub use compose::{merge_groups, strip_finest_levels};
 #[cfg(feature = "convert")]
+pub use encode::Gray8Encoding;
+#[cfg(feature = "convert")]
 pub use pano::{PanoOptions, convert_equirect, convert_equirect_bytes};
 #[cfg(feature = "convert")]
 pub use planar::{PlanarOptions, convert_planar, convert_planar_bytes};

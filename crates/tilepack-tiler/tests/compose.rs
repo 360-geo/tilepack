@@ -52,7 +52,7 @@ fn merge_rgb_and_nir_siblings() {
                 min: 0,
                 max: 65535,
             },
-            gray8_quality: None,
+            gray8: tilepack_tiler::Gray8Encoding::Lossless,
         },
     )
     .unwrap();
