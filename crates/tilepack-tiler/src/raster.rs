@@ -113,7 +113,7 @@ fn halve_u16_mean(src: &U16Slab, dw: u32, dh: u32, nodata: u16) -> U16Slab {
                     }
                 }
             }
-            out.data[(y as usize) * dw as usize + x as usize] = if n == 0 { nodata } else { (sum / n) as u16 };
+            out.data[(y as usize) * dw as usize + x as usize] = sum.checked_div(n).map_or(nodata, |mean| mean as u16);
         }
     }
     out
