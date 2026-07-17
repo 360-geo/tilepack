@@ -48,6 +48,7 @@ pub fn convert_equirect(eq: &RgbSlab, opts: &PanoOptions) -> Result<Vec<u8>, Til
         sample: SampleType::Rgb8,
         flags: GroupFlags::default(),
         level_count: levels,
+        level_skip: 0,
         radiometry: Radiometry::default(),
     };
     let params = WriterParams {

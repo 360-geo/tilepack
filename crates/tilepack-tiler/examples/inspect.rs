@@ -38,12 +38,14 @@ fn main() {
 
     for (i, g) in fm.layout.groups().iter().enumerate() {
         let levels = fm.layout.group_levels(i);
+        let (fw, fh) = fm.layout.level_dims(levels.end - 1);
         println!(
-            "  [{i}] {:?} {:?} {:?} level_count={} levels={:?} untiled={} nearest={}",
+            "  [{i}] {:?} {:?} {:?} level_count={} level_skip={} levels={:?} finest={fw}x{fh} untiled={} nearest={}",
             g.semantic,
             g.codec,
             g.sample,
             g.level_count,
+            g.level_skip,
             levels,
             g.flags.untiled(),
             g.flags.nearest_downsample(),

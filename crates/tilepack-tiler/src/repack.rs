@@ -251,6 +251,7 @@ fn group_template(levels: u8, codec: Codec) -> GroupDescriptor {
         sample: SampleType::Rgb8,
         flags: GroupFlags::default(),
         level_count: levels,
+        level_skip: 0,
         radiometry: Radiometry::default(),
     }
 }

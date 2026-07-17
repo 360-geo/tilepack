@@ -29,7 +29,7 @@ struct Config {
     tile_size: u16,
     root_w: u32,
     root_h: u32,
-    groups: Vec<(u8, bool)>, // (level_count_offset_from_full, untiled)
+    groups: Vec<(u8, u8, bool)>, // (level_count_offset_from_full, skip_seed, untiled)
 }
 
 fn config_strategy() -> impl Strategy<Value = Config> {
@@ -38,7 +38,7 @@ fn config_strategy() -> impl Strategy<Value = Config> {
         let face_count = if cube { 6u8 } else { 1u8 };
         let dim = 1u32..=(6 * tile_size as u32);
         let dim2 = dim.clone();
-        let groups = prop::collection::vec((0u8..3, any::<bool>()), 1..=3);
+        let groups = prop::collection::vec((0u8..3, any::<u8>(), any::<bool>()), 1..=3);
         (Just(tile_size), Just(face_count), dim, dim2, groups).prop_map(move |(tile_size, face_count, root_w, mut root_h, groups)| {
             if face_count == 6 {
                 root_h = root_w;
@@ -59,14 +59,17 @@ fn build(config: &Config) -> (Header, Vec<GroupDescriptor>, u8) {
     let groups: Vec<GroupDescriptor> = config
         .groups
         .iter()
-        .map(|&(off, untiled)| {
+        .map(|&(off, skip_seed, untiled)| {
             let level_count = (levels - (off % levels)).max(1);
+            // Any legal window position: skip in 0..=levels - level_count.
+            let level_skip = skip_seed % (levels - level_count + 1);
             GroupDescriptor {
                 semantic: Semantic::Rgb,
                 codec: Codec::Webp,
                 sample: SampleType::Rgb8,
                 flags: GroupFlags::new(untiled, false),
                 level_count,
+                level_skip,
                 radiometry: Radiometry::default(),
             }
         })

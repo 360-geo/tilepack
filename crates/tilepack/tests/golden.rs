@@ -23,6 +23,7 @@ fn golden_bytes() -> Vec<u8> {
             sample: SampleType::Rgb8,
             flags: GroupFlags::default(),
             level_count: 2,
+            level_skip: 0,
             radiometry: Radiometry::default(),
         },
         GroupDescriptor {
@@ -31,6 +32,7 @@ fn golden_bytes() -> Vec<u8> {
             sample: SampleType::U16,
             flags: GroupFlags::new(true, false),
             level_count: 1,
+            level_skip: 1,
             radiometry: Radiometry {
                 scale: 0.001,
                 offset: 0.0,
@@ -77,13 +79,15 @@ fn golden_parses_to_expected_structure() {
     assert_eq!(groups[1].semantic, Semantic::Depth);
     assert_eq!(groups[1].codec, Codec::Depthpack);
     assert_eq!(groups[1].level_count, 1);
+    assert_eq!(groups[1].level_skip, 1);
+    assert_eq!(view.fm.layout.group_levels(1), 0..1, "depth anchored at the coarse level");
     assert!(groups[1].flags.untiled());
     assert_eq!(groups[1].radiometry.scale, 0.001);
     assert_eq!(groups[1].radiometry.unit_str(), Some("m"));
 
     // RGB group: level 0 (coarse) is 6 faces * 1 tile; level 1 (fine) is
-    // 6 faces * 4 tiles (128/64 = 2x2). Depth group: 6 faces * 1 untiled.
-    // Total = 6 + 24 + 6 = 36.
+    // 6 faces * 4 tiles (128/64 = 2x2). Depth group: 6 faces * 1 untiled at
+    // level 0. Total = 6 + 24 + 6 = 36.
     assert_eq!(view.fm.layout.total_tiles(), 36);
 
     // Every 5th tile is absent by construction.

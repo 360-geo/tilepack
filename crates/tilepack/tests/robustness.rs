@@ -22,6 +22,7 @@ fn valid_file() -> Vec<u8> {
             sample: SampleType::Rgb8,
             flags: GroupFlags::default(),
             level_count: 2,
+            level_skip: 0,
             radiometry: Radiometry::default(),
         },
         GroupDescriptor {
@@ -30,6 +31,7 @@ fn valid_file() -> Vec<u8> {
             sample: SampleType::U16,
             flags: GroupFlags::new(true, false),
             level_count: 1,
+            level_skip: 0,
             radiometry: Radiometry {
                 scale: 0.001,
                 offset: 0.0,
@@ -152,6 +154,31 @@ fn adversarial_tile_count_is_capped_not_allocated() {
     buf[28] = 255; // level_count at descriptor offset 4 -> buf[24+4]
     let err = FrontMatter::parse(&buf).unwrap_err();
     assert!(matches!(err, ParseError::Inconsistent(_)), "got {err:?}");
+}
+
+#[test]
+fn level_skip_overflow_rejected() {
+    // valid_file has levels = 2; group 0 covers both. Setting its level_skip
+    // to 1 makes skip + count = 3 > levels, which must fail, not wrap.
+    let f = valid_file();
+    let mut bad = f.clone();
+    bad[24 + 5] = 1; // group 0 descriptor, level_skip at offset 5
+    assert!(matches!(FrontMatter::parse(&bad), Err(ParseError::Inconsistent(_))));
+
+    // Skip 255 with count 255 in a 255-level header must not underflow either.
+    let mut buf = vec![0u8; 24 + 48];
+    buf[0..4].copy_from_slice(b"TPCK");
+    buf[4] = 1;
+    buf[5] = 1;
+    buf[6] = 255; // levels
+    buf[7] = 1;
+    buf[8..10].copy_from_slice(&1u16.to_le_bytes());
+    buf[12..16].copy_from_slice(&16u32.to_le_bytes());
+    buf[16..20].copy_from_slice(&16u32.to_le_bytes());
+    buf[25] = 1; // codec webp
+    buf[28] = 255; // level_count
+    buf[29] = 255; // level_skip
+    assert!(matches!(FrontMatter::parse(&buf), Err(ParseError::Inconsistent(_))));
 }
 
 proptest! {

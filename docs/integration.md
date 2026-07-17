@@ -57,7 +57,16 @@ Build the ingest image with `--features convert,turbojpeg` and, for depth,
 `0` = nodata) and the tiler owns the container.
 
 ```rust
-// panorama depth: one untiled equirect blob, fetched whole for reprojection
+// panorama depth destined for ONE file with the RGB cubemap: pick the RGB
+// pyramid level nearest the depth source's native resolution, remap to a
+// cubemap at exactly that size, then merge. merge_groups re-anchors the depth
+// group onto that level (`level_skip`), pixel-exact co-registered with the
+// RGB mip of the same file level.
+let face = tilepack_tiler::nearest_level_face_size(rgb_face, rgb_levels, depth_native / 4);
+let depth_tpc = tilepack_tiler::convert_depth_cubemap(&u16_slab, face, &DepthOptions::default())?;
+let one_file = tilepack_tiler::merge_groups(&rgb_tpc, &depth_tpc)?;
+
+// standalone equirect sibling: one untiled blob, fetched whole for reprojection
 let tpc = tilepack_tiler::convert_depth_equirect(&u16_slab, &DepthOptions::default())?;
 // perspective-photo depth: tiled, nearest-decimated pyramid
 let tpc = tilepack_tiler::convert_depth_planar(&u16_slab, 512, &DepthOptions::default())?;
@@ -124,6 +133,13 @@ parsing, the LFH probe): every tile dimension is exact from the header.
 
 For depth, `depthpack::decode_scaled_into` writes physical `f32` (NaN nodata)
 straight into the GPU upload buffer — no CPU mm-to-metre expansion pass.
+
+To find depth in a combined file, scan descriptors for `Semantic::Depth`;
+`fm.layout.group_levels(g)` gives the file level(s) it covers (for a pano
+depth group that is one coarse level — `level_count = 1` with a non-zero
+`level_skip`), and `fm.level_range(g, level)` fetches all six faces in one
+request. Depth texels at that level are exactly co-registered with the RGB
+mip of the same file level.
 
 ## Where the time goes
 

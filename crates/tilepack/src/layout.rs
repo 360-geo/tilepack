@@ -108,6 +108,9 @@ impl Layout {
             if g.level_count < 1 || g.level_count > header.levels {
                 return Err(ParseError::Inconsistent("level_count out of 1..=levels"));
             }
+            if g.level_skip > header.levels - g.level_count {
+                return Err(ParseError::Inconsistent("level_skip + level_count exceeds levels"));
+            }
         }
 
         let mut group_base = Vec::with_capacity(groups.len());
@@ -116,10 +119,11 @@ impl Layout {
 
         for g in &groups {
             group_base.push(running);
-            let lo = header.levels - g.level_count;
+            let hi = header.levels - g.level_skip;
+            let lo = hi - g.level_count;
             let mut bases = Vec::with_capacity(g.level_count as usize);
             let mut group_running: u64 = 0;
-            for level in lo..header.levels {
+            for level in lo..hi {
                 bases.push(group_running);
                 let count = level_tile_count(&header, g, level);
                 group_running = group_running
@@ -199,10 +203,10 @@ impl Layout {
     }
 
     /// The inclusive-exclusive range of file levels group `g` covers,
-    /// coarse to fine.
+    /// coarse to fine. The window ends `level_skip` levels below the finest.
     pub fn group_levels(&self, g: usize) -> std::ops::Range<u8> {
-        let lo = self.header.levels - self.groups[g].level_count;
-        lo..self.header.levels
+        let hi = self.header.levels - self.groups[g].level_skip;
+        (hi - self.groups[g].level_count)..hi
     }
 
     /// Number of faces in this file (1 or 6).

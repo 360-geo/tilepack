@@ -82,8 +82,9 @@ dimensions describe each face.
 | 1      | 1    | codec — 0 jpeg, 1 webp, 2 webp-split16, 3 depthpack, 4 jpegxl |
 | 2      | 1    | sample — 0 rgb8, 1 gray8, 2 u16 |
 | 3      | 1    | flags — bit 0 untiled, bit 1 nearest downsample |
-| 4      | 1    | level_count — 1..=levels, counted from the finest level |
-| 5      | 3    | reserved |
+| 4      | 1    | level_count — number of file levels covered, at least 1 |
+| 5      | 1    | level_skip — finest file levels this group omits, usually 0 |
+| 6      | 2    | reserved |
 | 8      | 8    | scale (f64) |
 | 16     | 8    | offset (f64) |
 | 24     | 2    | nodata sentinel in counts (u16) |
@@ -108,11 +109,32 @@ For `depthpack` groups the radiometry fields MUST equal the
 corresponding fields in every blob's own header; the duplication lets a
 client configure units and display windows before fetching any tile.
 
-`level_count = n` means the group covers the finest *n* levels of the
-file pyramid, i.e. file levels `levels − n` through `levels − 1`. A
-group with `level_count = 1` has only the finest level — typical for
-depth, where coarse silhouette-averaged levels would be geometrically
-wrong.
+A group covers a contiguous window of `level_count` file levels ending
+`level_skip` levels below the finest: file levels
+`levels − level_skip − level_count` through `levels − 1 − level_skip`.
+Writers MUST satisfy `level_skip + level_count <= levels`.
+`level_skip = 0` — the common case — anchors the group at the finest
+level, so `level_count = n, level_skip = 0` means the finest *n*
+levels.
+
+A non-zero `level_skip` stores a band whose native resolution is
+coarser than the primary imagery at the file level whose dimensions
+match it, rather than upsampling it to a fake full-resolution level: a
+900 px depth field beside 3600 px RGB cube faces is a group with
+`level_skip = 2, level_count = 1`. Bands MUST be stored at the exact
+level dimensions `w(L) × h(L)`; writers producing a derived band (a
+depth field resampled into the cube) MUST pick the file level nearest
+the band's native resolution and resample to it. Leaving a group's
+finest levels absent is NOT a substitute for `level_skip` — absent
+tiles are nodata content, not a fetch-coarser signal.
+
+**Groups in one file are co-registered at shared levels**: two groups
+covering the same file level have identical pixel dimensions, an
+identical tile grid (untiled groups aside), and identical normalized
+face coordinates. A
+client may sample one band's level-`L` texels and another band's
+level-`L` texels through the same coordinates, texel-for-texel — the
+property that makes multi-band files worth having.
 
 The `untiled` flag replaces the tile grid with exactly one blob per
 face per level, covering the whole face. Use it when clients always
@@ -268,7 +290,9 @@ a jpeg group to jpegxl without generation loss.
   — nodata texels do not contribute, all-nodata footprints stay nodata.
 - Discontinuous fields (depth): averaging across silhouettes invents
   values that exist nowhere. Either build no pyramid
-  (`level_count = 1`) or set the nearest-downsample flag and decimate.
+  (`level_count = 1`, with `level_skip` anchoring the single level at
+  the band's native resolution) or set the nearest-downsample flag and
+  decimate.
 
 ## HTTP access pattern
 
@@ -306,6 +330,11 @@ primary — an equirectangular depth field next to a cubemap color file —
 because co-registration is a property of the asset, not the pixel grid.
 A later batch job can merge siblings into one file by concatenating
 blob runs and rewriting the front matter; tiles are never re-encoded.
+A lower-resolution sibling whose root equals the primary's dimensions
+at some pyramid level merges by re-anchoring its groups onto that level
+(adding the difference to `level_skip`); per-level geometry is
+identical by the nested-ceil halving identity, so blobs still transfer
+verbatim.
 
 ## Versioning
 

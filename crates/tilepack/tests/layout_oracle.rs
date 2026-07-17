@@ -19,12 +19,17 @@ fn header(face_count: u8, levels: u8, tile_size: u16, root_w: u32, root_h: u32, 
 }
 
 fn group(level_count: u8, untiled: bool) -> GroupDescriptor {
+    group_at(level_count, 0, untiled)
+}
+
+fn group_at(level_count: u8, level_skip: u8, untiled: bool) -> GroupDescriptor {
     GroupDescriptor {
         semantic: Semantic::Rgb,
         codec: Codec::Webp,
         sample: SampleType::Rgb8,
         flags: GroupFlags::new(untiled, false),
         level_count,
+        level_skip,
         radiometry: Radiometry::default(),
     }
 }
@@ -51,6 +56,12 @@ fn brute_order(layout: &Layout) -> Vec<TileLoc> {
 fn check(header: Header, groups: Vec<GroupDescriptor>) {
     let layout = Layout::new(header, groups).expect("layout builds");
     let order = brute_order(&layout);
+
+    // The level window sits level_skip below the finest and spans level_count.
+    for (g, d) in layout.groups().iter().enumerate() {
+        let hi = header.levels - d.level_skip;
+        assert_eq!(layout.group_levels(g), (hi - d.level_count)..hi, "group {g} level window");
+    }
 
     // Total count agrees.
     assert_eq!(order.len() as u64, layout.total_tiles(), "total tile count");
@@ -123,6 +134,30 @@ fn cubemap_multigroup_partial_levels() {
     // RGB full pyramid + depth single finest level, untiled.
     let h = header(6, 4, 512, 4096, 4096, 2);
     check(h, vec![group(4, false), group(1, true)]);
+}
+
+#[test]
+fn cubemap_depth_at_coarse_level() {
+    // The production shape: 3600 RGB faces (levels 450/900/1800/3600) plus an
+    // untiled 900 px depth group anchored two levels below the finest.
+    let h = header(6, 4, 512, 3600, 3600, 2);
+    check(h, vec![group(4, false), group_at(1, 2, true)]);
+}
+
+#[test]
+fn skip_windows_tile_the_pyramid() {
+    // Tiled skip groups at every legal window position, plus an untiled one.
+    let h = header(6, 4, 512, 4096, 4096, 4);
+    check(
+        h,
+        vec![group(4, false), group_at(2, 1, false), group_at(1, 3, false), group_at(2, 2, true)],
+    );
+}
+
+#[test]
+fn planar_skip_window() {
+    let h = header(1, 5, 512, 5000, 3000, 2);
+    check(h, vec![group(5, false), group_at(2, 2, false)]);
 }
 
 #[test]

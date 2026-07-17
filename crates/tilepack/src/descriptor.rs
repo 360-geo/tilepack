@@ -186,8 +186,14 @@ pub struct GroupDescriptor {
     pub codec: Codec,
     pub sample: SampleType,
     pub flags: GroupFlags,
-    /// Number of finest levels this group covers, `1..=header.levels`.
+    /// Number of file levels this group covers, at least 1.
     pub level_count: u8,
+    /// Number of finest file levels this group omits; 0 anchors the group at
+    /// the finest level. The group covers file levels
+    /// `levels − level_skip − level_count .. levels − level_skip`, so a band
+    /// coarser than the primary imagery sits at the file level matching its
+    /// resolution (a 900 px depth field beside 3600 px RGB: skip 2, count 1).
+    pub level_skip: u8,
     pub radiometry: Radiometry,
 }
 
@@ -202,7 +208,8 @@ impl GroupDescriptor {
         let sample = SampleType::from_u8(buf[2]);
         let flags = GroupFlags(buf[3]);
         let level_count = buf[4];
-        // buf[5..8] reserved
+        let level_skip = buf[5];
+        // buf[6..8] reserved
         let scale = f64::from_le_bytes(buf[8..16].try_into().unwrap());
         let offset = f64::from_le_bytes(buf[16..24].try_into().unwrap());
         let nodata = u16::from_le_bytes([buf[24], buf[25]]);
@@ -219,6 +226,7 @@ impl GroupDescriptor {
             sample,
             flags,
             level_count,
+            level_skip,
             radiometry: Radiometry {
                 scale,
                 offset,
@@ -235,12 +243,16 @@ impl GroupDescriptor {
         if self.level_count < 1 || self.level_count > levels {
             return Err(WriteError::InvalidParams("level_count must be in 1..=levels"));
         }
+        if self.level_skip > levels - self.level_count {
+            return Err(WriteError::InvalidParams("level_skip + level_count must be <= levels"));
+        }
         let mut b = [0u8; DESCRIPTOR_LEN];
         b[0] = self.semantic.to_u8();
         b[1] = self.codec.to_u8();
         b[2] = self.sample.to_u8();
         b[3] = self.flags.0;
         b[4] = self.level_count;
+        b[5] = self.level_skip;
         b[8..16].copy_from_slice(&self.radiometry.scale.to_le_bytes());
         b[16..24].copy_from_slice(&self.radiometry.offset.to_le_bytes());
         b[24..26].copy_from_slice(&self.radiometry.nodata.to_le_bytes());
@@ -263,6 +275,7 @@ mod tests {
             sample: SampleType::U16,
             flags: GroupFlags(0b0000_0011),
             level_count: 3,
+            level_skip: 1,
             radiometry: Radiometry {
                 scale: 0.001,
                 offset: -1.5,
@@ -286,9 +299,25 @@ mod tests {
             sample: SampleType::Rgb8,
             flags: GroupFlags::default(),
             level_count: 5,
+            level_skip: 0,
             radiometry: Radiometry::default(),
         };
         assert!(d.to_bytes(4).is_err(), "level_count 5 > levels 4 rejected");
         assert!(d.to_bytes(5).is_ok());
+    }
+
+    #[test]
+    fn level_skip_bounds_checked() {
+        let d = GroupDescriptor {
+            semantic: Semantic::Depth,
+            codec: Codec::Depthpack,
+            sample: SampleType::U16,
+            flags: GroupFlags::new(true, false),
+            level_count: 1,
+            level_skip: 2,
+            radiometry: Radiometry::default(),
+        };
+        assert!(d.to_bytes(2).is_err(), "skip 2 + count 1 > levels 2 rejected");
+        assert!(d.to_bytes(3).is_ok(), "skip 2 + count 1 == levels 3 accepted");
     }
 }

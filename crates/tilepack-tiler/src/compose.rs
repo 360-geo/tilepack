@@ -1,29 +1,63 @@
-//! Editing existing tilepacks without re-encoding: merging a same-geometry
-//! sibling's groups in, and dropping the finest pyramid levels for archival.
-//! Both operations copy tile blobs verbatim and rewrite only the front matter.
+//! Editing existing tilepacks without re-encoding: merging a sibling's groups
+//! in (same resolution, or a lower-resolution sibling re-anchored onto the
+//! matching pyramid level), and dropping the finest pyramid levels for
+//! archival. Both operations copy tile blobs verbatim and rewrite only the
+//! front matter.
 
 use tilepack::{GroupDescriptor, TilepackView, Writer, WriterParams};
 
 use crate::TilerError;
 
 /// Append every group of `sibling` to `primary`, producing one file. The two
-/// must share geometry (face count, root dimensions, tile size, level count).
-/// Existing tiles keep their ordinals; the sibling's groups are appended, so
-/// no blob is re-encoded or moved relative to its group.
+/// must share face count and tile size, and the sibling's root dimensions
+/// must equal the primary's dimensions at some pyramid level — a
+/// lower-resolution sibling (a 900 px depth field beside 3600 px RGB faces)
+/// re-anchors onto that level via `level_skip`, per-level geometry being
+/// identical by the nested-ceil halving identity. Existing tiles keep their
+/// ordinals; the sibling's groups are appended, so no blob is re-encoded or
+/// moved relative to its group.
 pub fn merge_groups(primary: &[u8], sibling: &[u8]) -> Result<Vec<u8>, TilerError> {
     let a = TilepackView::new(primary).map_err(|e| TilerError::Io(format!("parse primary: {e}")))?;
     let b = TilepackView::new(sibling).map_err(|e| TilerError::Io(format!("parse sibling: {e}")))?;
     let (ha, hb) = (&a.fm.header, &b.fm.header);
 
-    if (ha.face_count, ha.levels, ha.tile_size, ha.root_w, ha.root_h) != (hb.face_count, hb.levels, hb.tile_size, hb.root_w, hb.root_h) {
-        return Err(TilerError::Geometry("merge requires primary and sibling to share geometry".into()));
+    if ha.face_count != hb.face_count {
+        return Err(TilerError::Geometry("merge requires matching face count".into()));
+    }
+    // Tile size only shapes tiled groups' grids; a fully-untiled sibling
+    // (the depth shape) needs no tile-grid agreement.
+    let sibling_all_untiled = b.fm.layout.groups().iter().all(|g| g.flags.untiled());
+    if ha.tile_size != hb.tile_size && !sibling_all_untiled {
+        return Err(TilerError::Geometry("merge of tiled groups requires matching tile size".into()));
     }
     if ha.group_count as usize + hb.group_count as usize > u8::MAX as usize {
         return Err(TilerError::Geometry("merged group count exceeds 255".into()));
     }
 
+    // The sibling's finest level must sit somewhere in the primary's pyramid:
+    // find the finest primary level whose dimensions equal the sibling root.
+    // `shift` is how many levels below the primary's finest that is; sibling
+    // groups re-anchor by adding it to their level_skip.
+    let anchor = (0..ha.levels)
+        .rev()
+        .find(|&level| a.fm.layout.level_dims(level) == (hb.root_w, hb.root_h) && level + 1 >= hb.levels);
+    let Some(anchor) = anchor else {
+        return Err(TilerError::Geometry(format!(
+            "sibling root {}x{} with {} levels does not fit the primary pyramid",
+            hb.root_w, hb.root_h, hb.levels
+        )));
+    };
+    let shift = ha.levels - 1 - anchor;
+
     let mut groups: Vec<GroupDescriptor> = a.fm.layout.groups().to_vec();
-    groups.extend_from_slice(b.fm.layout.groups());
+    for g in b.fm.layout.groups() {
+        let mut ng = *g;
+        ng.level_skip = g
+            .level_skip
+            .checked_add(shift)
+            .ok_or_else(|| TilerError::Geometry("re-anchored level_skip exceeds 255".into()))?;
+        groups.push(ng);
+    }
 
     let params = WriterParams {
         face_count: ha.face_count,
@@ -69,16 +103,20 @@ pub fn strip_finest_levels(existing: &[u8], n: u8) -> Result<Vec<u8>, TilerError
     // New finest dims = old dims at the level that becomes the new finest.
     let (new_root_w, new_root_h) = old.level_dims(h.levels - 1 - n);
 
-    // Retained groups, with level_count clamped to what survives.
+    // Retained groups, with the level window clamped to what survives. Level
+    // indices below the cut are unchanged, so a group keeps its coarse bound
+    // and loses only covered levels at or above `new_levels`.
     let mut new_groups: Vec<GroupDescriptor> = Vec::new();
     let mut kept_old_indices: Vec<usize> = Vec::new();
     for (gi, g) in old.groups().iter().enumerate() {
-        let lo = h.levels - g.level_count; // coarsest level the group covers
-        if lo >= new_levels {
+        let window = old.group_levels(gi);
+        if window.start >= new_levels {
             continue; // group lived only in dropped fine levels
         }
+        let new_hi = window.end.min(new_levels);
         let mut ng = *g;
-        ng.level_count = new_levels - lo;
+        ng.level_count = new_hi - window.start;
+        ng.level_skip = new_levels - new_hi;
         new_groups.push(ng);
         kept_old_indices.push(gi);
     }

@@ -37,6 +37,7 @@ pub fn convert_planar(img: &RgbSlab, opts: &PlanarOptions) -> Result<Vec<u8>, Ti
         sample: SampleType::Rgb8,
         flags: GroupFlags::default(),
         level_count: levels,
+        level_skip: 0,
         radiometry: Radiometry::default(),
     };
     let params = WriterParams {

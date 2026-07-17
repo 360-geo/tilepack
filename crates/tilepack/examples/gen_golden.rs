@@ -17,9 +17,10 @@ fn main() {
 }
 
 /// The golden file: a 2-level 128px cubemap with an RGB group (full pyramid,
-/// webp) and a depth group (finest level only, untiled, depthpack). Tile
-/// blobs are deterministic stand-ins, not real codec output — this fixture
-/// exercises the container, not the codecs.
+/// webp) and a depth group (untiled depthpack anchored at the coarse 64 px
+/// level, `level_skip = 1` — the lower-resolution-band shape). Tile blobs are
+/// deterministic stand-ins, not real codec output — this fixture exercises
+/// the container, not the codecs.
 pub fn golden_bytes() -> Vec<u8> {
     let params = WriterParams {
         face_count: 6,
@@ -35,6 +36,7 @@ pub fn golden_bytes() -> Vec<u8> {
             sample: SampleType::Rgb8,
             flags: GroupFlags::default(),
             level_count: 2,
+            level_skip: 0,
             radiometry: Radiometry::default(),
         },
         GroupDescriptor {
@@ -43,6 +45,7 @@ pub fn golden_bytes() -> Vec<u8> {
             sample: SampleType::U16,
             flags: GroupFlags::new(true, false),
             level_count: 1,
+            level_skip: 1,
             radiometry: Radiometry {
                 scale: 0.001,
                 offset: 0.0,

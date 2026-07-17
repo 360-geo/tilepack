@@ -158,6 +158,7 @@ pub fn convert_raster_split16(slab: &U16Slab, opts: &RasterOptions) -> Result<Ve
         sample: SampleType::U16,
         flags: GroupFlags::default(),
         level_count: levels,
+        level_skip: 0,
         radiometry: opts.radiometry.descriptor(),
     };
     let params = WriterParams {
@@ -213,6 +214,7 @@ pub fn convert_raster_gray8(slab: &U16Slab, opts: &RasterOptions) -> Result<Vec<
         sample: SampleType::Gray8,
         flags: GroupFlags::default(),
         level_count: levels,
+        level_skip: 0,
         radiometry: opts.radiometry.descriptor(),
     };
     let params = WriterParams {
@@ -268,6 +270,7 @@ pub fn convert_depth_equirect(slab: &U16Slab, opts: &DepthOptions) -> Result<Vec
         sample: SampleType::U16,
         flags: GroupFlags::new(true, true), // untiled + nearest (no averaging)
         level_count: 1,
+        level_skip: 0,
         radiometry: opts.radiometry.descriptor(),
     };
     let params = WriterParams {
@@ -316,10 +319,27 @@ fn remap_depth_face(eq: &U16Slab, face: Face, face_size: u32) -> U16Slab {
     out
 }
 
+/// The face size a derived cube band (depth) must use to sit beside a primary
+/// RGB pyramid in one file: the primary's level dimension nearest the band's
+/// native resolution. Merging via `merge_groups` then re-anchors the band onto
+/// that level (`level_skip`), pixel-exact co-registered with the primary.
+pub fn nearest_level_face_size(rgb_face_size: u32, rgb_levels: u8, native: u32) -> u32 {
+    (0..rgb_levels)
+        .map(|l| {
+            let shift = (rgb_levels - 1 - l) as u32;
+            if shift >= 32 { 1 } else { rgb_face_size.div_ceil(1 << shift) }
+        })
+        .min_by_key(|&dim| dim.abs_diff(native))
+        .unwrap_or(rgb_face_size)
+}
+
 /// Convert an equirectangular depth raster into an untiled **cubemap**
 /// depthpack tilepack: 6 nearest-sampled faces, one depthpack blob each, all
-/// contiguous so a viewer fetches them in a single range request. `face_size`
-/// is typically `equirect_width / 4`.
+/// contiguous so a viewer fetches them in a single range request. As a
+/// standalone sibling, `face_size` is typically `equirect_width / 4`; when the
+/// file will be merged into an RGB cubemap, pass
+/// [`nearest_level_face_size`] so the depth group lands exactly on a primary
+/// pyramid level.
 pub fn convert_depth_cubemap(eq: &U16Slab, face_size: u32, opts: &DepthOptions) -> Result<Vec<u8>, TilerError> {
     if eq.w != eq.h * 2 {
         return Err(TilerError::Geometry(format!("equirect must be 2:1, got {}x{}", eq.w, eq.h)));
@@ -331,6 +351,7 @@ pub fn convert_depth_cubemap(eq: &U16Slab, face_size: u32, opts: &DepthOptions) 
         sample: SampleType::U16,
         flags: GroupFlags::new(true, true), // untiled + nearest
         level_count: 1,
+        level_skip: 0,
         radiometry: opts.radiometry.descriptor(),
     };
     let params = WriterParams {
@@ -376,6 +397,7 @@ pub fn convert_depth_planar(slab: &U16Slab, tile_size: u16, opts: &DepthOptions)
         sample: SampleType::U16,
         flags: GroupFlags::new(false, true), // tiled + nearest downsample
         level_count: levels,
+        level_skip: 0,
         radiometry: opts.radiometry.descriptor(),
     };
     let params = WriterParams {

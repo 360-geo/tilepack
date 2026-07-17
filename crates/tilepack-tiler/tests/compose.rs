@@ -1,11 +1,13 @@
-//! Composition: merging a same-geometry sibling and stripping finest levels,
-//! both without re-encoding.
+//! Composition: merging a same-geometry sibling, merging a lower-resolution
+//! depth sibling onto its pyramid level, and stripping finest levels — all
+//! without re-encoding.
 
 use tilepack::layout::{Face, TileLoc};
 use tilepack::{Semantic, TilepackView};
 use tilepack_tiler::RgbSlab;
 use tilepack_tiler::{
-    PlanarOptions, Radiometrics, RasterOptions, U16Slab, convert_planar, convert_raster_split16, merge_groups, strip_finest_levels,
+    DepthOptions, PanoOptions, PlanarOptions, Radiometrics, RasterOptions, U16Slab, convert_depth_cubemap, convert_equirect,
+    convert_planar, convert_raster_split16, merge_groups, nearest_level_face_size, strip_finest_levels,
 };
 
 fn rgb(w: u32, h: u32) -> RgbSlab {
@@ -77,6 +79,98 @@ fn merge_rgb_and_nir_siblings() {
                 assert_eq!(mv.tile(nloc), nv.tile(n0), "nir tile {level} {col},{row}");
             }
         }
+    }
+}
+
+/// The production pano shape: an RGB cubemap pyramid plus a depth field at a
+/// quarter of the RGB face size, merged into one file. The depth group must
+/// re-anchor onto the matching pyramid level via level_skip, blobs verbatim.
+#[test]
+fn merge_lower_resolution_depth_into_rgb_pano() {
+    // 1024x512 equirect -> 256px RGB faces, tile 128 -> 2 levels (128, 256).
+    let mut eq = RgbSlab::new(1024, 512);
+    for y in 0..512 {
+        for x in 0..1024 {
+            eq.set_pixel(x, y, [(x % 251) as u8, (y % 241) as u8, ((x + y) % 239) as u8]);
+        }
+    }
+    let rgb_tpc = convert_equirect(
+        &eq,
+        &PanoOptions {
+            tile_size: 128,
+            quality: 80.0,
+            face_size: Some(256),
+        },
+    )
+    .unwrap();
+    let rv = TilepackView::new(&rgb_tpc).unwrap();
+    assert_eq!(rv.fm.header.levels, 2);
+
+    // Depth at half the RGB resolution: native ~130 px faces snap to the
+    // 128 px pyramid level.
+    let mut deq = U16Slab::new(1024, 512);
+    for (i, v) in deq.data.iter_mut().enumerate() {
+        *v = ((i * 13) % 60000) as u16 + 1;
+    }
+    let face = nearest_level_face_size(256, 2, 130);
+    assert_eq!(face, 128);
+    let depth_tpc = convert_depth_cubemap(&deq, face, &DepthOptions::default()).unwrap();
+
+    let merged = merge_groups(&rgb_tpc, &depth_tpc).unwrap();
+    let mv = TilepackView::new(&merged).unwrap();
+
+    // Header keeps the primary geometry; the depth group re-anchored.
+    assert_eq!(mv.fm.header.levels, 2);
+    assert_eq!((mv.fm.header.root_w, mv.fm.header.root_h), (256, 256));
+    assert_eq!(mv.fm.header.group_count, 2);
+    let depth = &mv.fm.layout.groups()[1];
+    assert_eq!(depth.semantic, Semantic::Depth);
+    assert_eq!(depth.level_count, 1);
+    assert_eq!(depth.level_skip, 1, "depth anchors one level below the finest");
+    assert_eq!(mv.fm.layout.group_levels(1), 0..1);
+    assert_eq!(mv.fm.layout.level_dims(0), (128, 128));
+
+    // RGB tiles verbatim at their original locations.
+    for level in mv.fm.layout.group_levels(0) {
+        let (cols, rows) = mv.fm.layout.grid(level);
+        for face_i in 0..6 {
+            let f = Face::from_index(face_i).unwrap();
+            for row in 0..rows {
+                for col in 0..cols {
+                    let loc = TileLoc::new(0, level, f, row, col);
+                    assert_eq!(mv.tile(loc), rv.tile(loc), "rgb tile L{level} f{face_i} {col},{row}");
+                }
+            }
+        }
+    }
+    // Depth blobs verbatim: merged (group 1, level 0) equals sibling's
+    // (group 0, level 0), face by face.
+    let dv = TilepackView::new(&depth_tpc).unwrap();
+    for face_i in 0..6 {
+        let f = Face::from_index(face_i).unwrap();
+        let got = mv.tile(TileLoc::new(1, 0, f, 0, 0));
+        let want = dv.tile(TileLoc::new(0, 0, f, 0, 0));
+        assert!(want.is_some(), "sibling depth face {face_i} present");
+        assert_eq!(got, want, "depth face {face_i} verbatim");
+    }
+
+    // A depth sibling whose resolution matches no pyramid level is refused.
+    let bad_depth = convert_depth_cubemap(&deq, 100, &DepthOptions::default()).unwrap();
+    assert!(merge_groups(&rgb_tpc, &bad_depth).is_err());
+
+    // Stripping the finest RGB level leaves depth at what is now the finest
+    // level: its window is untouched, only its skip shrinks.
+    let stripped = strip_finest_levels(&merged, 1).unwrap();
+    let sv = TilepackView::new(&stripped).unwrap();
+    assert_eq!(sv.fm.header.levels, 1);
+    assert_eq!(sv.fm.header.group_count, 2);
+    let sdepth = &sv.fm.layout.groups()[1];
+    assert_eq!((sdepth.level_count, sdepth.level_skip), (1, 0));
+    for face_i in 0..6 {
+        let f = Face::from_index(face_i).unwrap();
+        let got = sv.tile(TileLoc::new(1, 0, f, 0, 0));
+        let want = dv.tile(TileLoc::new(0, 0, f, 0, 0));
+        assert_eq!(got, want, "stripped depth face {face_i} verbatim");
     }
 }
 
