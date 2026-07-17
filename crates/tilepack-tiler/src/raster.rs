@@ -1,13 +1,15 @@
 //! Raw-value raster conversion: depth (depthpack) and near-infrared / thermal
-//! (webp-split16). Planar only; panorama depth ships as an untiled equirect
-//! sibling.
+//! (webp-split16). Planar for NIR/TIR; depth ships as an untiled equirect
+//! sibling, an untiled cubemap, or a tiled planar pyramid.
 
 use rayon::prelude::*;
+use tilepack::cube::{col_to_a, row_to_b};
 use tilepack::descriptor::{Codec, GroupDescriptor, GroupFlags, Radiometry, SampleType, Semantic};
 use tilepack::layout::{Face, TileLoc};
 use tilepack::{Writer, WriterParams, split16_pack_vec};
 
 use crate::encode::{Gray8Encoding, encode_webp_gray8, encode_webp_lossless};
+use crate::remap::coords::face_source_coord;
 use crate::slab::{RgbSlab, U16Slab};
 use crate::{TilerError, levels_for};
 
@@ -285,6 +287,82 @@ pub fn convert_depth_equirect(slab: &U16Slab, opts: &DepthOptions) -> Result<Vec
     };
     let blob = depthpack::encode(&slab.data, slab.w, slab.h, &enc).map_err(|e| TilerError::Io(format!("depthpack encode: {e}")))?;
     writer.set_ordinal(0, blob)?;
+    writer.finish().map_err(Into::into)
+}
+
+/// Nearest-sample the equirect u16 at source coords. Longitude wraps at the
+/// seam, latitude clamps at the poles. Depth is never interpolated — averaging
+/// across a silhouette invents a value that exists nowhere.
+fn nearest_u16(eq: &U16Slab, sx: f32, sy: f32) -> u16 {
+    let w = eq.w as i64;
+    let h = eq.h as i64;
+    let x = (sx.round() as i64).rem_euclid(w) as usize;
+    let y = (sy.round() as i64).clamp(0, h - 1) as usize;
+    eq.data[y * eq.w as usize + x]
+}
+
+/// Remap an equirect depth raster to one cube face by nearest sampling, using
+/// the production cube convention.
+fn remap_depth_face(eq: &U16Slab, face: Face, face_size: u32) -> U16Slab {
+    let mut out = U16Slab::new(face_size, face_size);
+    out.data.par_chunks_mut(face_size as usize).enumerate().for_each(|(row, dst)| {
+        let b = row_to_b(row as u32, face_size);
+        for (col, slot) in dst.iter_mut().enumerate() {
+            let a = col_to_a(col as u32, face_size);
+            let (sx, sy) = face_source_coord(face, a, b, eq.w, eq.h);
+            *slot = nearest_u16(eq, sx, sy);
+        }
+    });
+    out
+}
+
+/// Convert an equirectangular depth raster into an untiled **cubemap**
+/// depthpack tilepack: 6 nearest-sampled faces, one depthpack blob each, all
+/// contiguous so a viewer fetches them in a single range request. `face_size`
+/// is typically `equirect_width / 4`.
+pub fn convert_depth_cubemap(eq: &U16Slab, face_size: u32, opts: &DepthOptions) -> Result<Vec<u8>, TilerError> {
+    if eq.w != eq.h * 2 {
+        return Err(TilerError::Geometry(format!("equirect must be 2:1, got {}x{}", eq.w, eq.h)));
+    }
+    let tile_size = u16::try_from(face_size).map_err(|_| TilerError::Geometry("depth face exceeds 65535 px".into()))?;
+    let group = GroupDescriptor {
+        semantic: Semantic::Depth,
+        codec: Codec::Depthpack,
+        sample: SampleType::U16,
+        flags: GroupFlags::new(true, true), // untiled + nearest
+        level_count: 1,
+        radiometry: opts.radiometry.descriptor(),
+    };
+    let params = WriterParams {
+        face_count: 6,
+        levels: 1,
+        tile_size,
+        root_w: face_size,
+        root_h: face_size,
+    };
+    let mut writer = Writer::new(params, vec![group])?;
+    let layout = writer.layout().clone();
+
+    let enc = depthpack::EncodeOptions {
+        scale: opts.radiometry.scale,
+        offset: opts.radiometry.offset,
+        unit: opts.radiometry.unit.clone(),
+        zstd_level: opts.zstd_level,
+    };
+
+    let encoded: Result<Vec<(usize, Vec<u8>)>, TilerError> = Face::ALL
+        .par_iter()
+        .map(|&face| {
+            let f = remap_depth_face(eq, face, face_size);
+            let blob =
+                depthpack::encode(&f.data, face_size, face_size, &enc).map_err(|e| TilerError::Io(format!("depthpack encode: {e}")))?;
+            let ordinal = layout.tile_ordinal(TileLoc::new(0, 0, face, 0, 0)).expect("face tile in layout");
+            Ok((ordinal, blob))
+        })
+        .collect();
+    for (ordinal, blob) in encoded? {
+        writer.set_ordinal(ordinal, blob)?;
+    }
     writer.finish().map_err(Into::into)
 }
 
