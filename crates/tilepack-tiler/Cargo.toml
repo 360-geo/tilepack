@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Native converter, repack, and composition tools for the tilepack container format."
 keywords = ["tiles", "pyramid", "panorama", "webp", "geospatial"]
 categories = ["encoding", "science::geo", "multimedia::images"]
+readme = "../../README.md"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
