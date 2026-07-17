@@ -12,8 +12,13 @@ publish = false
 default = ["repack", "convert"]
 # Lossless remux of existing DZP/SZI (Deep Zoom in ZIP) archives into tilepack.
 repack = ["dep:zip", "dep:quick-xml"]
+# Depth-only conversion: equirect->cube remap + depthpack encode + composition.
+# The lightweight subset for producers that only emit depth (e.g.
+# pointcloud-utils) — pulls in depthpack + rayon but NOT libwebp/cc.
+depth = ["dep:depthpack", "dep:rayon"]
 # Source-image conversion: decode, equirect->cube remap, pyramid, tile encode.
-convert = ["dep:zune-jpeg", "dep:png", "dep:fast_image_resize", "dep:webp", "dep:pulp", "dep:bytemuck", "dep:rayon", "dep:depthpack"]
+# Supersets `depth`.
+convert = ["depth", "dep:zune-jpeg", "dep:png", "dep:fast_image_resize", "dep:webp", "dep:pulp", "dep:bytemuck"]
 # Swap JPEG decode to libjpeg-turbo (faster than the pure-Rust zune-jpeg;
 # needs a C toolchain + nasm). Native ingest pipelines want this.
 turbojpeg = ["dep:turbojpeg"]

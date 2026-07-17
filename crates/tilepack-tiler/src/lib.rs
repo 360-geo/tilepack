@@ -14,7 +14,9 @@ use thiserror::Error;
 #[cfg(feature = "repack")]
 pub mod repack;
 
-#[cfg(feature = "convert")]
+// The depth subset (remap coords, u16 slab, composition, depthpack encode) is
+// shared by `depth` and `convert`; the RGB/webp modules are `convert` only.
+#[cfg(any(feature = "convert", feature = "depth"))]
 pub mod compose;
 #[cfg(feature = "convert")]
 pub mod decode;
@@ -26,27 +28,28 @@ pub mod pano;
 pub mod planar;
 #[cfg(feature = "convert")]
 pub mod pyramid;
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "depth"))]
 pub mod raster;
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "depth"))]
 pub mod remap;
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "depth"))]
 pub mod slab;
 
-#[cfg(feature = "convert")]
-pub use compose::{merge_groups, strip_finest_levels};
+#[cfg(any(feature = "convert", feature = "depth"))]
+pub use compose::{merge_groups, remove_semantic_groups, strip_finest_levels};
 #[cfg(feature = "convert")]
 pub use encode::Gray8Encoding;
 #[cfg(feature = "convert")]
 pub use pano::{PanoOptions, convert_equirect, convert_equirect_bytes};
 #[cfg(feature = "convert")]
 pub use planar::{PlanarOptions, convert_planar, convert_planar_bytes};
-#[cfg(feature = "convert")]
+#[cfg(any(feature = "convert", feature = "depth"))]
 pub use raster::{
-    DepthOptions, Radiometrics, RasterOptions, convert_depth_cubemap, convert_depth_equirect, convert_depth_planar, convert_raster_gray8,
-    convert_raster_split16, nearest_level_face_size,
+    DepthOptions, Radiometrics, convert_depth_cubemap, convert_depth_equirect, convert_depth_planar, nearest_level_face_size,
 };
 #[cfg(feature = "convert")]
+pub use raster::{RasterOptions, convert_raster_gray8, convert_raster_split16};
+#[cfg(any(feature = "convert", feature = "depth"))]
 pub use slab::{RgbSlab, U16Slab};
 
 /// Errors from tiler operations.

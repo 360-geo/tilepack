@@ -2,14 +2,19 @@
 
 pub mod coords;
 
+#[cfg(feature = "convert")]
 use rayon::prelude::*;
+#[cfg(feature = "convert")]
 use tilepack::layout::Face;
 
+#[cfg(feature = "convert")]
 use crate::slab::RgbSlab;
+#[cfg(feature = "convert")]
 use coords::face_row_coords;
 
 /// Bilinear sample of an equirectangular image. Longitude wraps at the seam;
 /// latitude clamps at the poles.
+#[cfg(feature = "convert")]
 #[inline]
 fn sample_bilinear(eq: &RgbSlab, sx: f32, sy: f32) -> [u8; 3] {
     let w = eq.w as i64;
@@ -43,6 +48,7 @@ fn sample_bilinear(eq: &RgbSlab, sx: f32, sy: f32) -> [u8; 3] {
 
 /// Render one cube face at `face_size x face_size` by sampling the equirect.
 /// Rows are processed in parallel.
+#[cfg(feature = "convert")]
 pub fn remap_face(eq: &RgbSlab, face: Face, face_size: u32) -> RgbSlab {
     let mut out = RgbSlab::new(face_size, face_size);
     let row_stride = face_size as usize * 3;

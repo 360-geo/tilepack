@@ -6,12 +6,17 @@ use rayon::prelude::*;
 use tilepack::cube::{col_to_a, row_to_b};
 use tilepack::descriptor::{Codec, GroupDescriptor, GroupFlags, Radiometry, SampleType, Semantic};
 use tilepack::layout::{Face, TileLoc};
-use tilepack::{Writer, WriterParams, split16_pack_vec};
+use tilepack::{Writer, WriterParams};
 
+#[cfg(feature = "convert")]
 use crate::encode::{Gray8Encoding, encode_webp_gray8, encode_webp_lossless};
 use crate::remap::coords::face_source_coord;
-use crate::slab::{RgbSlab, U16Slab};
+#[cfg(feature = "convert")]
+use crate::slab::RgbSlab;
+use crate::slab::U16Slab;
 use crate::{TilerError, levels_for};
+#[cfg(feature = "convert")]
+use tilepack::split16_pack_vec;
 
 /// Physical mapping and windowing for a raw-value raster.
 #[derive(Debug, Clone)]
@@ -38,6 +43,7 @@ impl Radiometrics {
 }
 
 /// Options for a tiled raw-value raster (NIR / TIR).
+#[cfg(feature = "convert")]
 #[derive(Debug, Clone)]
 pub struct RasterOptions {
     pub tile_size: u16,
@@ -89,6 +95,7 @@ fn crop_u16_tile(level: &U16Slab, col: u32, row: u32, tile_size: u32) -> U16Slab
 
 /// Nodata-aware mean 2:1 downsample: each dest pixel averages its up-to-4
 /// valid source pixels; an all-nodata footprint stays nodata.
+#[cfg(feature = "convert")]
 fn halve_u16_mean(src: &U16Slab, dw: u32, dh: u32, nodata: u16) -> U16Slab {
     let mut out = U16Slab::new(dw, dh);
     for y in 0..dh {
@@ -128,6 +135,7 @@ fn halve_u16_nearest(src: &U16Slab, dw: u32, dh: u32) -> U16Slab {
 
 #[derive(Clone, Copy)]
 enum Downsample {
+    #[cfg(feature = "convert")]
     Mean(u16),
     Nearest,
 }
@@ -140,6 +148,7 @@ fn build_u16_pyramid(finest: U16Slab, dims: &[(u32, u32)], mode: Downsample) -> 
         let finer = out[l + 1].as_ref().unwrap();
         let (dw, dh) = dims[l];
         let coarse = match mode {
+            #[cfg(feature = "convert")]
             Downsample::Mean(nodata) => halve_u16_mean(finer, dw, dh, nodata),
             Downsample::Nearest => halve_u16_nearest(finer, dw, dh),
         };
@@ -149,6 +158,7 @@ fn build_u16_pyramid(finest: U16Slab, dims: &[(u32, u32)], mode: Downsample) -> 
 }
 
 /// Convert an NIR or TIR u16 raster into a planar `webp-split16` tilepack.
+#[cfg(feature = "convert")]
 pub fn convert_raster_split16(slab: &U16Slab, opts: &RasterOptions) -> Result<Vec<u8>, TilerError> {
     let tile_size = opts.tile_size;
     let levels = levels_for(slab.w, slab.h, tile_size);
@@ -205,6 +215,7 @@ pub fn convert_raster_split16(slab: &U16Slab, opts: &RasterOptions) -> Result<Ve
 /// Values must fit in 8 bits; the sample type is `gray8` and radiometry
 /// applies. Smaller than split16 for genuinely 8-bit data, which has no
 /// high byte to carry.
+#[cfg(feature = "convert")]
 pub fn convert_raster_gray8(slab: &U16Slab, opts: &RasterOptions) -> Result<Vec<u8>, TilerError> {
     let tile_size = opts.tile_size;
     let levels = levels_for(slab.w, slab.h, tile_size);

@@ -7,7 +7,7 @@ use tilepack::{Semantic, TilepackView};
 use tilepack_tiler::RgbSlab;
 use tilepack_tiler::{
     DepthOptions, PanoOptions, PlanarOptions, Radiometrics, RasterOptions, U16Slab, convert_depth_cubemap, convert_equirect,
-    convert_planar, convert_raster_split16, merge_groups, nearest_level_face_size, strip_finest_levels,
+    convert_planar, convert_raster_split16, merge_groups, nearest_level_face_size, remove_semantic_groups, strip_finest_levels,
 };
 
 fn rgb(w: u32, h: u32) -> RgbSlab {
@@ -80,6 +80,65 @@ fn merge_rgb_and_nir_siblings() {
             }
         }
     }
+}
+
+/// `remove_semantic_groups` is the replace-in-place primitive: a re-run drops
+/// the old depth group before merging a fresh one, so files never accumulate
+/// duplicate depth. Other groups' blobs must survive verbatim.
+#[test]
+fn remove_semantic_groups_drops_only_the_match() {
+    let w = 400;
+    let h = 300;
+    let ts = 128;
+    let rgb_tpc = convert_planar(
+        &rgb(w, h),
+        &PlanarOptions {
+            tile_size: ts,
+            quality: 80.0,
+        },
+    )
+    .unwrap();
+    let nir_tpc = convert_raster_split16(
+        &nir(w, h),
+        &RasterOptions {
+            tile_size: ts,
+            semantic: Semantic::Nir,
+            radiometry: Radiometrics {
+                scale: 1.0,
+                offset: 0.0,
+                unit: "".into(),
+                nodata: 0,
+                min: 0,
+                max: 65535,
+            },
+            gray8: tilepack_tiler::Gray8Encoding::Lossless,
+        },
+    )
+    .unwrap();
+    let merged = merge_groups(&rgb_tpc, &nir_tpc).unwrap();
+
+    // Removing a semantic that is not present returns the input verbatim.
+    let unchanged = remove_semantic_groups(&merged, Semantic::Depth).unwrap();
+    assert_eq!(unchanged, merged);
+
+    // Removing NIR leaves only RGB, byte-identical to the standalone RGB file.
+    let stripped = remove_semantic_groups(&merged, Semantic::Nir).unwrap();
+    let sv = TilepackView::new(&stripped).unwrap();
+    let rv = TilepackView::new(&rgb_tpc).unwrap();
+    assert_eq!(sv.fm.header.group_count, 1);
+    assert_eq!(sv.fm.layout.groups()[0].semantic, Semantic::Rgb);
+    for level in sv.fm.layout.group_levels(0) {
+        let (cols, rows) = sv.fm.layout.grid(level);
+        for row in 0..rows {
+            for col in 0..cols {
+                let loc = TileLoc::new(0, level, Face::Front, row, col);
+                assert_eq!(sv.tile(loc), rv.tile(loc), "rgb tile {level} {col},{row} verbatim");
+            }
+        }
+    }
+
+    // Removing the only remaining semantic is refused (a file needs a group).
+    assert!(remove_semantic_groups(&stripped, Semantic::Rgb).is_err());
 }
 
 /// The production pano shape: an RGB cubemap pyramid plus a depth field at a

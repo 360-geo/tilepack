@@ -4,7 +4,7 @@
 //! archival. Both operations copy tile blobs verbatim and rewrite only the
 //! front matter.
 
-use tilepack::{GroupDescriptor, TilepackView, Writer, WriterParams};
+use tilepack::{GroupDescriptor, Semantic, TilepackView, Writer, WriterParams};
 
 use crate::TilerError;
 
@@ -79,6 +79,57 @@ pub fn merge_groups(primary: &[u8], sibling: &[u8]) -> Result<Vec<u8>, TilerErro
     for j in 0..b_total {
         if let Some(blob) = b.tile_by_ordinal(j) {
             writer.set_ordinal(a_total + j, blob.to_vec())?;
+        }
+    }
+    writer.finish().map_err(Into::into)
+}
+
+/// Drop every group whose semantic matches `semantic`, copying all other
+/// groups' blobs verbatim. File-level geometry (faces, levels, tile size,
+/// root dimensions) is unchanged, so each retained group keeps its level
+/// window and every blob transfers as-is. This is the replace-in-place
+/// primitive: strip an existing depth group before merging a fresh one so a
+/// re-run does not accumulate duplicates. Errors if removing the semantic
+/// would leave no groups. If nothing matches, the input is returned verbatim.
+pub fn remove_semantic_groups(existing: &[u8], semantic: Semantic) -> Result<Vec<u8>, TilerError> {
+    let view = TilepackView::new(existing).map_err(|e| TilerError::Io(format!("parse: {e}")))?;
+    let old = &view.fm.layout;
+    let h = &view.fm.header;
+
+    let mut new_groups: Vec<GroupDescriptor> = Vec::new();
+    let mut kept_old_indices: Vec<usize> = Vec::new();
+    for (gi, g) in old.groups().iter().enumerate() {
+        if g.semantic == semantic {
+            continue;
+        }
+        new_groups.push(*g);
+        kept_old_indices.push(gi);
+    }
+    if new_groups.is_empty() {
+        return Err(TilerError::Geometry("removing the semantic would leave no groups".into()));
+    }
+    if new_groups.len() == old.groups().len() {
+        return Ok(existing.to_vec()); // nothing matched
+    }
+
+    let params = WriterParams {
+        face_count: h.face_count,
+        levels: h.levels,
+        tile_size: h.tile_size,
+        root_w: h.root_w,
+        root_h: h.root_h,
+    };
+    let mut writer = Writer::new(params, new_groups)?;
+    let new_layout = writer.layout().clone();
+
+    // New group g maps to old group kept_old_indices[g]; within a group the
+    // canonical order is identical, so the two ordinal runs align one-to-one
+    // and blobs copy verbatim.
+    for (new_gi, &old_gi) in kept_old_indices.iter().enumerate() {
+        for (new_ord, old_ord) in new_layout.group_run(new_gi).zip(old.group_run(old_gi)) {
+            if let Some(blob) = view.tile_by_ordinal(old_ord) {
+                writer.set_ordinal(new_ord, blob.to_vec())?;
+            }
         }
     }
     writer.finish().map_err(Into::into)
