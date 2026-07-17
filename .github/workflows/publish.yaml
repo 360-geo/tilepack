@@ -26,12 +26,42 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           sed -i "s/^version = .*/version = \"${VERSION}\"/" crates/tilepack/Cargo.toml
+          sed -i "s/^version = .*/version = \"${VERSION}\"/" crates/tilepack-tiler/Cargo.toml
+          # Keep the internal path dep's version requirement in lockstep so the
+          # published tilepack-tiler depends on the tilepack version we just cut.
+          sed -i "s|tilepack = { path = \"crates/tilepack\", version = \"[^\"]*\" }|tilepack = { path = \"crates/tilepack\", version = \"${VERSION}\" }|" Cargo.toml
 
       - name: Authenticate via Trusted Publishing (OIDC)
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
+      # Idempotent: tilepack may already be published at this version (e.g. a
+      # release that only introduces tilepack-tiler). Skip the "already
+      # uploaded" case instead of failing the whole release.
       - name: Publish tilepack
-        run: cargo publish -p tilepack --allow-dirty
+        run: |
+          set -o pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if cargo publish -p tilepack --allow-dirty 2>&1 | tee publish.log; then
+            exit 0
+          fi
+          if grep -qiE "already (uploaded|exists)" publish.log; then
+            echo "tilepack ${VERSION} already on crates.io — skipping."
+            exit 0
+          fi
+          exit 1
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      # First publish only: tilepack-tiler does not yet exist on crates.io, so
+      # trusted publishing cannot be configured for it. Use the bootstrap token.
+      # After the crate is live, configure Trusted Publishing on crates.io and
+      # replace this step's env with the OIDC token from the auth step above:
+      #   CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - name: Publish tilepack-tiler
+        run: cargo publish -p tilepack-tiler --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN_FOR_NEW_CRATES_ONLY }}

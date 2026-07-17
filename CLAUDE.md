@@ -15,9 +15,10 @@ ingest pipeline (writer). Sibling repo: [depthpack](https://github.com/360-geo/d
   no I/O beyond the optional `TilepackReader` over `Read + Seek`. Do not add
   dependencies here without a hard reason; never add a C-linked or
   wasm-hostile crate.
-- `crates/tilepack-tiler` — native converter, repack, composition. `publish =
-  false`. Has the heavy deps (libwebp, turbojpeg, fast_image_resize, pulp,
-  depthpack) behind feature flags. Never imported by the viewer.
+- `crates/tilepack-tiler` — native converter, repack, composition. Published
+  to crates.io in lockstep with `tilepack` (same version, cut from one tag).
+  Has the heavy deps (libwebp, turbojpeg, fast_image_resize, pulp, depthpack)
+  behind feature flags. Never imported by the viewer.
 - `fuzz/` — cargo-fuzz, non-workspace-member (own `[workspace]`).
 - `fixtures/golden.tpc` — byte-stable golden file (see below).
 

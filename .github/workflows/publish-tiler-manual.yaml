@@ -1,0 +1,28 @@
+# TEMPORARY: one-shot manual publish of tilepack-tiler's first release.
+# Trigger from the Actions tab ("Run workflow"), then delete this file.
+# tilepack-tiler doesn't exist on crates.io yet, so trusted publishing can't be
+# configured for it — this uses the bootstrap token. After it's live, the
+# regular publish.yaml (release-triggered) takes over; switch it to OIDC then.
+name: Publish tilepack-tiler (manual, one-shot)
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish tilepack-tiler
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Publish tilepack-tiler
+        run: cargo publish -p tilepack-tiler
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN_FOR_NEW_CRATES_ONLY }}
