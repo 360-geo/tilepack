@@ -56,12 +56,7 @@ jobs:
       - name: Wait for crates.io index
         run: sleep 30
 
-      # First publish only: tilepack-tiler does not yet exist on crates.io, so
-      # trusted publishing cannot be configured for it. Use the bootstrap token.
-      # After the crate is live, configure Trusted Publishing on crates.io and
-      # replace this step's env with the OIDC token from the auth step above:
-      #   CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
       - name: Publish tilepack-tiler
         run: cargo publish -p tilepack-tiler --allow-dirty
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN_FOR_NEW_CRATES_ONLY }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
