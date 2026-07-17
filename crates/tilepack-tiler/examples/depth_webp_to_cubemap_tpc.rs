@@ -1,6 +1,6 @@
 //! Convert a legacy packed-mm equirect depth WebP into a cubemap depthpack
 //! tilepack. The WebP stores `mm = (R << 8) | G`, `0` = nodata (the layout the
-//! argos WebP baked-depth path reads today).
+//! production WebP baked-depth path reads today).
 //!
 //! `cargo run --release -p tilepack-tiler --example depth_webp_to_cubemap_tpc -- depth.webp out.tpc [max_range_m] [face_size]`
 

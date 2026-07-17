@@ -1,5 +1,5 @@
 //! The cubemap direction table must be edge-consistent (adjacent faces agree
-//! along shared edges) and self-inverse. This is the production dzp/argos
+//! along shared edges) and self-inverse. This is the production DZP
 //! convention; the end-to-end orientation check against a real render is a
 //! separate tiler-crate fixture (Phase 0).
 

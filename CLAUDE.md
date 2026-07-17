@@ -2,8 +2,8 @@
 
 Single-file, header-first container for tiled multi-band image pyramids, read
 over HTTP range requests. This repo is both the spec ([SPEC.md](SPEC.md)) and
-its reference implementation. Consumed by the argos viewer (reader) and the
-ingest pipeline (writer). Sibling repo: [depthpack](https://github.com/360-geo/depthpack)
+its reference implementation. Consumed by the production viewer (reader) and
+the ingest pipeline (writer). Sibling repo: [depthpack](https://github.com/360-geo/depthpack)
 (the u16 depth codec tilepack embeds).
 
 ## Crate layout
@@ -42,13 +42,13 @@ Dev tools are examples, not a CLI crate (deliberately — see git history):
 
 ## Invariants — do not break these
 
-- **Cube face convention = the production dzp/argos convention** (`front =
+- **Cube face convention = the production convention** (`front =
   (−1,−a,−b)`, …), encoded once in `crates/tilepack/src/cube.rs` as the single
   source of truth. SPEC.md's table was reconciled to it. The orientation e2e
   test (`tiler/tests/orientation.rs`) validates it end to end — if you touch
   cube math, that test must stay green.
 - **Level 0 = coarsest, `levels-1` = finest**, in both the format and the
-  argos reader. `Layout` dimensions are exact `ceil`-halving from the root; a
+  production reader. `Layout` dimensions are exact `ceil`-halving from the root; a
   reader never decodes a tile to learn its size.
 - **Canonical tile order** (group-major, coarse→fine, face, row, col) is what
   makes runs contiguous and composition cheap. `Layout::tile_ordinal` /
@@ -89,6 +89,6 @@ Dev tools are examples, not a CLI crate (deliberately — see git history):
 - Downsampling rules matter for correctness: display = any resampler; raw
   continuous (NIR/TIR) = nodata-aware mean; depth = nearest (never average
   across silhouettes). The `raster.rs` builders already encode this.
-- `docs/integration.md` is the wiring guide (georizon_next ingest, argos
-  reader prefix protocol, pointcloud-utils depth boundary, perf budget). Keep
-  it current when the public API changes.
+- `docs/integration.md` is the wiring guide (ingest service, viewer prefix
+  protocol, depth-producer boundary, perf budget). Keep it current when the
+  public API changes.

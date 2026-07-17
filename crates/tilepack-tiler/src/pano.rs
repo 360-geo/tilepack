@@ -18,7 +18,7 @@ pub struct PanoOptions {
     pub tile_size: u16,
     /// WebP quality 0..=100.
     pub quality: f32,
-    /// Per-face edge length. Defaults to `equirect_width / 4` (the dzp
+    /// Per-face edge length. Defaults to `equirect_width / 4` (the legacy DZP
     /// convention). Determines pyramid depth and output resolution.
     pub face_size: Option<u32>,
 }
@@ -120,7 +120,7 @@ pub fn convert_equirect(eq: &RgbSlab, opts: &PanoOptions) -> Result<Vec<u8>, Til
     writer.finish().map_err(Into::into)
 }
 
-/// Decode a JPEG/PNG equirect and convert it — the georizon_next entry point
+/// Decode a JPEG/PNG equirect and convert it — the ingest-service entry point
 /// (`spawn_blocking(|| convert_equirect_bytes(&bytes, &opts))`).
 pub fn convert_equirect_bytes(bytes: &[u8], opts: &PanoOptions) -> Result<Vec<u8>, TilerError> {
     let eq = decode_rgb(bytes)?;

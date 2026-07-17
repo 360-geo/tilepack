@@ -1,9 +1,9 @@
 //! Cubemap face geometry.
 //!
-//! This encodes the **production convention** used by the existing `dzp`
-//! converter and the argos viewer, so tiles produced here render identically
-//! to today's panoramas. The direction functions match `dzp`'s per-face
-//! orientation exactly:
+//! This encodes the **production convention** used by the legacy DZP
+//! converter and the production viewer, so tiles produced here render
+//! identically to today's panoramas. The direction functions match the legacy
+//! per-face orientation exactly:
 //!
 //! ```text
 //! front (−1, −a, −b)   back  ( 1,  a, −b)

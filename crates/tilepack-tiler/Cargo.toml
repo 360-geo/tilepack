@@ -15,8 +15,8 @@ default = ["repack", "convert"]
 # Lossless remux of existing DZP/SZI (Deep Zoom in ZIP) archives into tilepack.
 repack = ["dep:zip", "dep:quick-xml"]
 # Depth-only conversion: equirect->cube remap + depthpack encode + composition.
-# The lightweight subset for producers that only emit depth (e.g.
-# pointcloud-utils) — pulls in depthpack + rayon but NOT libwebp/cc.
+# The lightweight subset for producers that only emit depth —
+# pulls in depthpack + rayon but NOT libwebp/cc.
 depth = ["dep:depthpack", "dep:rayon"]
 # Source-image conversion: decode, equirect->cube remap, pyramid, tile encode.
 # Supersets `depth`.

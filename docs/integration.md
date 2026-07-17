@@ -25,11 +25,11 @@ WebP encoder, so the default `convert` build already links libwebp (a
 `cc`-only build, no cmake/nasm). Only the core `tilepack` crate is
 wasm-safe; the tiler is native-only.
 
-## georizon_next ingest
+## Ingest service
 
-The two Redis queue workers (`GenerateDzpWorker`, `GenerateSziWorker`) call
-the external `dzp` crate today. The replacement is a bytes-in, bytes-out call
-inside the existing `spawn_blocking`:
+The ingest service's panorama and planar queue workers call the legacy DZP
+converter today. The replacement is a bytes-in, bytes-out call inside the
+existing `spawn_blocking`:
 
 ```rust
 // panorama worker
@@ -42,17 +42,17 @@ let tpc = spawn_blocking(move || {
 }).await??;
 ```
 
-The converter is stateless (no shared cache like `dzp`'s
-`Arc<RwLock<HashMap>>` face-size cache), so one global `rayon` pool sized to
+The converter is stateless (no shared face-size cache like the legacy
+converter's), so one global `rayon` pool sized to
 the pod's CPUs is all the setup it needs. Output content type is up to the
 service; the file is self-describing from its header.
 
 Build the ingest image with `--features convert,turbojpeg` and, for depth,
 `depthpack`'s `zstd-c` feature (see below).
 
-## Depth from pointcloud-utils
+## Depth producer
 
-`depthmap-gen` currently writes a bespoke `mm`-in-WebP file plus a
+The depth producer currently writes a bespoke `mm`-in-WebP file plus a
 `meta.json`. The new boundary: it emits a raw `u16` lattice (millimetres,
 `0` = nodata) and the tiler owns the container.
 
@@ -113,7 +113,7 @@ example `gdal_translate -b 1 -b 2 -b 3` and `-b 4`) and feed the RGB and NIR
 rasters to `convert_planar` and the raster converters, then `merge_groups` them
 into one file. The `rgbi` example does exactly this.
 
-## argos viewer
+## Viewer
 
 The reader is the wasm-safe `tilepack` core. The app does its own HTTP:
 
@@ -162,14 +162,12 @@ ride mature SIMD in their respective libraries; remap is fully parallelized.
 
 The remap coordinate transform (`face_dir` then `atan2`/`acos` to equirect
 `(u, v)`) is the only stage that would benefit from a hand-written `pulp`
-kernel, following the branchless-polynomial pattern in pointcloud-utils'
-`colorizer/src/project/pulp_kernel.rs`. It is deliberately not written yet:
-it is a non-dominant stage (encode is the ceiling), the numerics are delicate,
-and it needs real before/after benchmarking to justify. The scalar
-`remap::coords::face_row_coords` is structured as the parity oracle a future
-kernel is checked against, exactly as colorizer checks its kernel against a
-scalar reference. Do that work against a real fixture with the perf harness,
-not speculatively.
+kernel, following the usual branchless-polynomial pattern. It is deliberately
+not written yet: it is a non-dominant stage (encode is the ceiling), the
+numerics are delicate, and it needs real before/after benchmarking to justify.
+The scalar `remap::coords::face_row_coords` is structured as the parity oracle
+a future kernel is checked against. Do that work against a real fixture with
+the perf harness, not speculatively.
 
 `split16` packing is left as a plain byte-strided loop: it autovectorizes and
 runs at ~1 GB/s, well below any stage that matters.
@@ -178,6 +176,6 @@ runs at ~1 GB/s, well below any stage that matters.
 
 The `convert` example prints wall time. For per-stage numbers, instrument with
 `std::time::Instant` around decode / remap+pyramid / encode and compare against
-the current `dzp` crate on the same fixture (the `dzp` CLI has no timing, so
+the legacy converter on the same fixture (it has no timing of its own, so
 wrap it in a small harness for the baseline). Track results on fixed fixtures
 (an 8192x4096 and a 16384x8192 panorama, a large oblique) run over run.
