@@ -9,7 +9,7 @@
 use proptest::prelude::*;
 use tilepack::descriptor::{Codec, GroupDescriptor, GroupFlags, Radiometry, SampleType, Semantic};
 use tilepack::layout::Layout;
-use tilepack::{FrontMatter, Header, TilepackView, Writer, WriterParams};
+use tilepack::{FrontMatter, Header, Prelude, SparseReader, TilepackView, Writer, WriterParams};
 
 /// Smallest `levels` whose coarsest level fits in one tile.
 fn levels_for(root_w: u32, root_h: u32, tile_size: u16) -> u8 {
@@ -143,6 +143,23 @@ proptest! {
         // Re-parsing front matter alone agrees.
         let fm = FrontMatter::parse(&bytes).unwrap();
         prop_assert_eq!(fm.offsets(), view.fm.offsets());
+
+        // The lazy path — Prelude entry arithmetic + SparseReader — agrees
+        // with the eager index for every ordinal. This equivalence is the
+        // contract a range-reading server (16-byte index reads, no full
+        // front matter) builds on.
+        let prelude = Prelude::parse(&bytes).unwrap();
+        prop_assert_eq!(prelude.front_matter_len(), fm.offsets()[0]);
+        let mut sparse = SparseReader::new(std::io::Cursor::new(bytes.as_slice())).unwrap();
+        for ord in 0..total {
+            let span = prelude.index_entry_span(ord).unwrap();
+            let entry: [u8; 16] = bytes[span.start as usize..span.end as usize].try_into().unwrap();
+            let range = prelude.tile_range_from_entry(&entry, Some(bytes.len() as u64)).unwrap();
+            prop_assert_eq!(&range, &fm.ordinal_range(ord), "lazy entry {}", ord);
+            let got = sparse.read_tile_by_ordinal(ord).unwrap();
+            prop_assert_eq!(&got, &expected[ord], "sparse tile {}", ord);
+        }
+        prop_assert!(prelude.index_entry_span(total).is_none());
 
         // level_range spans exactly its tiles' offsets.
         for g in 0..view.fm.layout.groups().len() {

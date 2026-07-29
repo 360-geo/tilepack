@@ -117,6 +117,152 @@ impl FrontMatter {
     }
 }
 
+/// Parsed header, descriptors, and layout — the prelude BEFORE the offset
+/// index. Everything a reader needs to plan **lazy** index lookups: hold
+/// these ~100 bytes, and any tile is locatable with one 16-byte read into
+/// the index region ([`Prelude::index_entry_span`]) plus one blob read.
+///
+/// This exists for indexes too large to fetch whole: the index costs 8
+/// bytes per tile, and at WMTS scale (a ~9.5M-tile ortho zoom level) that
+/// is a ~76 MB [`FrontMatter`] — fine on disk, hostile to a CDN worker
+/// that holds one per request. The trade: no upfront index validation
+/// (monotonicity, first-offset), so each entry is checked at decode time
+/// by [`Prelude::tile_range_from_entry`] instead. Prefer [`FrontMatter`]
+/// whenever fetching the whole index is acceptable.
+///
+/// Parsing needs at most `descriptors_end` bytes; like
+/// [`FrontMatter::parse`], a short prefix returns
+/// [`ParseError::Truncated`] with the byte count that lets it advance.
+#[derive(Debug, Clone)]
+pub struct Prelude {
+    pub header: Header,
+    pub layout: Layout,
+}
+
+impl Prelude {
+    /// Parse header + descriptors from a prefix of the file (the index and
+    /// blobs are not touched).
+    pub fn parse(prefix: &[u8]) -> Result<Prelude, ParseError> {
+        let header = Header::parse(prefix)?;
+        let descriptors_end = header.descriptors_end();
+        if prefix.len() < descriptors_end {
+            return Err(ParseError::Truncated { needed: descriptors_end });
+        }
+        let groups = parse_descriptors(header, prefix)?;
+        let layout = Layout::new(header, groups)?;
+        Ok(Prelude { header, layout })
+    }
+
+    /// Byte length of the full front matter (header + descriptors + index)
+    /// — also the offset of the first blob, which every valid index entry
+    /// must be ≥.
+    pub fn front_matter_len(&self) -> u64 {
+        self.layout.front_matter_len()
+    }
+
+    /// The 16-byte span of the file holding tile `ordinal`'s index entry
+    /// (its start offset and, adjacent, its end offset). `None` if the
+    /// ordinal is outside the layout. Fetch this span, then decode with
+    /// [`Prelude::tile_range_from_entry`].
+    pub fn index_entry_span(&self, ordinal: usize) -> Option<Range<u64>> {
+        if (ordinal as u64) >= self.layout.total_tiles() {
+            return None;
+        }
+        let at = self.header.descriptors_end() as u64 + ordinal as u64 * 8;
+        Some(at..at + 16)
+    }
+
+    /// [`Prelude::index_entry_span`] by tile location.
+    pub fn index_entry_span_for(&self, loc: TileLoc) -> Option<Range<u64>> {
+        self.index_entry_span(self.layout.tile_ordinal(loc)?)
+    }
+
+    /// Decode one fetched index entry into the tile's blob range, applying
+    /// the per-entry half of the validation [`FrontMatter::parse`] does for
+    /// the whole index: the range must start at or after the front matter
+    /// and must not run backwards; when the file length is known (HTTP
+    /// `Content-Range`, object metadata), it must not run past the end.
+    /// `Ok(None)` is an absent tile (zero length — content, not an error).
+    pub fn tile_range_from_entry(&self, entry: &[u8; 16], file_len: Option<u64>) -> Result<Option<Range<u64>>, ParseError> {
+        let start = u64::from_le_bytes(entry[..8].try_into().unwrap());
+        let end = u64::from_le_bytes(entry[8..].try_into().unwrap());
+        if end < start {
+            return Err(ParseError::BadIndex("entry runs backwards"));
+        }
+        if start < self.front_matter_len() {
+            return Err(ParseError::BadIndex("entry starts inside the front matter"));
+        }
+        if let Some(len) = file_len
+            && end > len
+        {
+            return Err(ParseError::BadIndex("entry runs past the end of the file"));
+        }
+        Ok(if start == end { None } else { Some(start..end) })
+    }
+}
+
+/// A tilepack read lazily from a seekable source: only the [`Prelude`] is
+/// parsed up front, and each tile lookup reads its 16-byte index entry and
+/// then the blob — three bounded reads total, O(1) memory regardless of
+/// index size. The `Read + Seek` twin of the HTTP lazy-range pattern (and
+/// its executable specification: the oracle test holds it equal to
+/// [`TilepackReader`]).
+pub struct SparseReader<R: Read + Seek> {
+    prelude: Prelude,
+    /// Source length, used to bound entry validation.
+    len: u64,
+    src: R,
+}
+
+impl<R: Read + Seek> SparseReader<R> {
+    /// Read and parse the prelude, leaving the index and blobs on the source.
+    pub fn new(mut src: R) -> Result<SparseReader<R>, ParseError> {
+        let len = src
+            .seek(SeekFrom::End(0))
+            .map_err(|_| ParseError::Truncated { needed: HEADER_LEN })?;
+        let mut buf = vec![0u8; HEADER_LEN];
+        read_exact_at(&mut src, 0, &mut buf)?;
+        loop {
+            match Prelude::parse(&buf) {
+                Ok(prelude) => return Ok(SparseReader { prelude, len, src }),
+                Err(ParseError::Truncated { needed }) => {
+                    buf.resize(needed, 0);
+                    read_exact_at(&mut src, 0, &mut buf)?;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    pub fn prelude(&self) -> &Prelude {
+        &self.prelude
+    }
+
+    /// Read a tile's compressed bytes into a fresh `Vec`; `None` if the
+    /// location is invalid or the tile is absent.
+    pub fn read_tile(&mut self, loc: TileLoc) -> Result<Option<Vec<u8>>, ParseError> {
+        let Some(ordinal) = self.prelude.layout.tile_ordinal(loc) else {
+            return Ok(None);
+        };
+        self.read_tile_by_ordinal(ordinal)
+    }
+
+    /// [`SparseReader::read_tile`] by flat ordinal.
+    pub fn read_tile_by_ordinal(&mut self, ordinal: usize) -> Result<Option<Vec<u8>>, ParseError> {
+        let Some(span) = self.prelude.index_entry_span(ordinal) else {
+            return Ok(None);
+        };
+        let mut entry = [0u8; 16];
+        read_exact_at(&mut self.src, span.start, &mut entry)?;
+        let Some(range) = self.prelude.tile_range_from_entry(&entry, Some(self.len))? else {
+            return Ok(None);
+        };
+        let mut buf = vec![0u8; (range.end - range.start) as usize];
+        read_exact_at(&mut self.src, range.start, &mut buf)?;
+        Ok(Some(buf))
+    }
+}
+
 /// A tilepack held entirely in memory: address tiles as byte slices.
 #[derive(Debug, Clone)]
 pub struct TilepackView<'a> {

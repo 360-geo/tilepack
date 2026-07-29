@@ -113,6 +113,20 @@ example `gdal_translate -b 1 -b 2 -b 3` and `-b 4`) and feed the RGB and NIR
 rasters to `convert_planar` and the raster converters, then `merge_groups` them
 into one file. The `rgbi` example does exactly this.
 
+## Lazy index reads (WMTS / huge planar levels)
+
+A map-tile (WMTS) pipeline can pack a whole zoom level as one single-level
+planar tilepack — millions of tiles, an offset index in the tens of MB. A
+serving process that extracts tiles on demand never fetches that index:
+it caches the ~100-byte prelude per pack, computes the tile ordinal from
+the level's known matrix window, and does one 16-byte range read into the
+index plus one blob read. Crate support: `Prelude` (parse
+header+descriptors, `index_entry_span`, `tile_range_from_entry` with
+per-entry validation) and `SparseReader` (the `Read + Seek` twin; the
+roundtrip property test holds it equal to the eager reader for every
+ordinal). `FrontMatter` remains the right choice whenever the index
+comfortably fits — panorama viewers keep using it unchanged.
+
 ## Viewer
 
 The reader is the wasm-safe `tilepack` core. The app does its own HTTP:
