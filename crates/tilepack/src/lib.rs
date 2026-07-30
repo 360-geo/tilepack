@@ -12,8 +12,16 @@
 //! [`split16`] helpers. It is pure Rust and compiles for
 //! `wasm32-unknown-unknown` — image decoding and tile encoding live in the
 //! caller (the browser, or the native tiler crate). It performs no I/O of its
-//! own beyond the optional [`TilepackReader`] convenience over a
-//! `Read + Seek` source.
+//! own beyond the optional [`TilepackReader`] / [`SparseReader`]
+//! conveniences over a `Read + Seek` source.
+//!
+//! Two reading disciplines share one wire format: [`FrontMatter`] fetches
+//! and validates the whole offset index up front (the viewer's pattern —
+//! panorama indexes are tens of KB), while [`Prelude`] holds only header +
+//! descriptors and locates any tile with one 16-byte read into the index
+//! region ([`Prelude::index_entry_span`] → [`Prelude::tile_range_from_entry`])
+//! — for indexes too large to hold, e.g. a WMTS ortho level with millions
+//! of tiles served by a CDN worker.
 //!
 //! ## Reading over range requests
 //!
@@ -55,6 +63,6 @@ pub use descriptor::{Codec, GroupDescriptor, GroupFlags, Radiometry, SampleType,
 pub use error::{ParseError, WriteError};
 pub use header::{HEADER_LEN, Header, MAGIC, VERSION};
 pub use layout::{Face, Layout, TileLoc};
-pub use reader::{FrontMatter, TilepackReader, TilepackView, required_len};
+pub use reader::{FrontMatter, Prelude, SparseReader, TilepackReader, TilepackView, required_len};
 pub use split16::{split16_pack, split16_pack_vec, split16_unpack, split16_unpack_vec};
 pub use writer::{Writer, WriterParams};

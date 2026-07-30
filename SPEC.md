@@ -314,6 +314,20 @@ Tile blobs themselves rarely ride along in the opening request — a
 by display priority, the primary band's coarsest tiles sit immediately
 after the front matter and are the natural first data fetch.
 
+When the index itself is too large to fetch whole (a WMTS-scale planar
+level runs to millions of tiles — tens of MB of index), a client MAY
+instead read only the header and descriptor table and then fetch, per
+tile, the 16 bytes at
+
+```text
+24 + 48 g + 8 i        (i = the tile's canonical ordinal)
+```
+
+which hold that tile's start and end offsets. Such a client forgoes the
+whole-index validation pass and MUST instead validate each entry it
+reads: `start ≤ end`, `start ≥` front-matter length, and `end ≤` the
+file length when known. Equal offsets mean an absent tile, as above.
+
 Every tile is exactly one range request at a known offset. Canonical
 order keeps a level's tiles contiguous per row, so clients can merge
 adjacent index entries into span requests; when doing so, keep the
