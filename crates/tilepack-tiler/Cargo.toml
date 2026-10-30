@@ -6,7 +6,7 @@ keywords = ["tiles", "pyramid", "panorama", "webp", "geospatial"]
 categories = ["encoding", "science::geo", "multimedia::images"]
 readme = "../../README.md"
 edition.workspace = true
-rust-version = "1.89"
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 

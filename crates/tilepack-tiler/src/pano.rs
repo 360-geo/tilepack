@@ -29,8 +29,9 @@ impl Default for PanoOptions {
     fn default() -> PanoOptions {
         PanoOptions {
             tile_size: 512,
-            quality: 80.0,
-            method: 4,
+            // The planar defaults; see PlanarOptions.
+            quality: 79.7,
+            method: 1,
             face_size: None,
         }
     }

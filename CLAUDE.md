@@ -67,8 +67,9 @@ Dev tools are examples, not a CLI crate (deliberately — see git history):
 
 ## Codec choices (learned from real data)
 
-- Obliques default to WebP method 1, q79.7: same size as method 4 at q80, ~2.7x
-  faster, ~0.35 dB lower. Storage is paid for years, so don't grow these files.
+- Obliques and panoramas default to WebP method 1, q79.7: on obliques the same
+  size as method 4 at q80, ~2.7x faster, ~0.35 dB lower. Storage is paid for
+  years, so don't grow these files.
 - Display imagery: JPEG or WebP (lossy). Panorama fresh-convert to WebP q80 is
   ~55% smaller than the JPEG-era DZPs; repack of current WebP DZPs is
   lossless and just strips ZIP overhead (~0.3–0.6%).
@@ -95,7 +96,7 @@ Dev tools are examples, not a CLI crate (deliberately — see git history):
   gen_golden` and review the diff — do not edit the bytes by hand.
 - The writer keeps `Cargo.lock` committed (deterministic CI). depthpack is a
   git dep pinned by rev.
-- `tilepack` stays on MSRV 1.87; `tilepack-tiler` is 1.89 for `fearless_simd`.
+- Both crates are MSRV 1.89, for `fearless_simd`.
 - `remap::kernel` functions must stay `#[inline(always)]`: `dispatch!` enables
   target features on its own body only, so an outlined helper silently loses
   AVX-512.

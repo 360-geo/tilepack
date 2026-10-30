@@ -12,7 +12,7 @@
 /// Panics if `rgb.len() != counts.len() * 3`.
 pub fn split16_pack(counts: &[u16], rgb: &mut [u8]) {
     assert_eq!(rgb.len(), counts.len() * 3, "rgb buffer must be counts.len() * 3");
-    for (c, px) in counts.iter().zip(rgb.chunks_exact_mut(3)) {
+    for (c, px) in counts.iter().zip(rgb.as_chunks_mut::<3>().0) {
         px[0] = (c >> 8) as u8;
         px[1] = (c & 0xff) as u8;
         px[2] = 0;
@@ -25,7 +25,7 @@ pub fn split16_pack(counts: &[u16], rgb: &mut [u8]) {
 /// Panics if `rgb.len() != counts.len() * 3`.
 pub fn split16_unpack(rgb: &[u8], counts: &mut [u16]) {
     assert_eq!(rgb.len(), counts.len() * 3, "rgb buffer must be counts.len() * 3");
-    for (c, px) in counts.iter_mut().zip(rgb.chunks_exact(3)) {
+    for (c, px) in counts.iter_mut().zip(rgb.as_chunks::<3>().0) {
         *c = ((px[0] as u16) << 8) | px[1] as u16;
     }
 }
@@ -53,7 +53,7 @@ mod tests {
         // Every u16 value packs and unpacks bit-exactly, and B stays 0.
         let counts: Vec<u16> = (0..=u16::MAX).collect();
         let rgb = split16_pack_vec(&counts);
-        for (i, px) in rgb.chunks_exact(3).enumerate() {
+        for (i, px) in rgb.as_chunks::<3>().0.iter().enumerate() {
             assert_eq!(px[2], 0, "B channel must be zero at {i}");
         }
         let back = split16_unpack_vec(&rgb);
