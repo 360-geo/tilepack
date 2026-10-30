@@ -3,8 +3,8 @@
 //! Matches the production `dzp` sampling: from a face pixel's `(a, b)`, take
 //! the local-frame direction, then `lon = atan2(y, x)` wrapped to `[0, 2pi)`
 //! and `lat = acos(z / |d|)`, and map to equirect pixel coordinates with the
-//! texel-center offset. The scalar function here is the oracle the SIMD
-//! kernel in this module's parent is checked against.
+//! texel-center offset. The scalar functions here are the oracle the SIMD
+//! [`kernel`](super::kernel) is checked against.
 
 use std::f64::consts::{PI, TAU};
 
@@ -24,8 +24,8 @@ pub fn face_source_coord(face: Face, a: f64, b: f64, eq_w: u32, eq_h: u32) -> (f
     (sx as f32, sy as f32)
 }
 
-/// Fill one destination row's source coordinates. Scalar reference used by the
-/// remapper and as the SIMD parity oracle.
+/// Fill one destination row's source coordinates. Scalar reference, and the
+/// SIMD parity oracle.
 pub fn face_row_coords(face: Face, row: u32, face_size: u32, eq_w: u32, eq_h: u32, sx: &mut [f32], sy: &mut [f32]) {
     let b = row_to_b(row, face_size);
     for col in 0..face_size as usize {

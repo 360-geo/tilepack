@@ -57,7 +57,7 @@ fn decode_png(bytes: &[u8]) -> Result<RgbSlab, TilerError> {
         png::ColorType::Rgb => buf,
         png::ColorType::Rgba => {
             let mut out = Vec::with_capacity((w as usize) * (h as usize) * 3);
-            for px in buf.chunks_exact(4) {
+            for px in buf.as_chunks::<4>().0 {
                 out.extend_from_slice(&px[0..3]);
             }
             out

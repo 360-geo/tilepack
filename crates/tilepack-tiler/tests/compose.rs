@@ -38,6 +38,7 @@ fn merge_rgb_and_nir_siblings() {
         &PlanarOptions {
             tile_size: ts,
             quality: 80.0,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -95,6 +96,7 @@ fn remove_semantic_groups_drops_only_the_match() {
         &PlanarOptions {
             tile_size: ts,
             quality: 80.0,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -159,6 +161,7 @@ fn merge_lower_resolution_depth_into_rgb_pano() {
             tile_size: 128,
             quality: 80.0,
             face_size: Some(256),
+            ..Default::default()
         },
     )
     .unwrap();
@@ -243,6 +246,7 @@ fn strip_finest_level_keeps_coarse_tiles_verbatim() {
         &PlanarOptions {
             tile_size: ts,
             quality: 80.0,
+            ..Default::default()
         },
     )
     .unwrap();

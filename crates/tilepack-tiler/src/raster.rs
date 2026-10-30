@@ -3,14 +3,13 @@
 //! sibling, an untiled cubemap, or a tiled planar pyramid.
 
 use rayon::prelude::*;
-use tilepack::cube::{col_to_a, row_to_b};
 use tilepack::descriptor::{Codec, GroupDescriptor, GroupFlags, Radiometry, SampleType, Semantic};
 use tilepack::layout::{Face, TileLoc};
 use tilepack::{Writer, WriterParams};
 
 #[cfg(feature = "convert")]
 use crate::encode::{Gray8Encoding, encode_webp_gray8, encode_webp_lossless};
-use crate::remap::coords::face_source_coord;
+use crate::remap::kernel::face_row_coords_simd;
 #[cfg(feature = "convert")]
 use crate::slab::RgbSlab;
 use crate::slab::U16Slab;
@@ -320,11 +319,11 @@ fn nearest_u16(eq: &U16Slab, sx: f32, sy: f32) -> u16 {
 fn remap_depth_face(eq: &U16Slab, face: Face, face_size: u32) -> U16Slab {
     let mut out = U16Slab::new(face_size, face_size);
     out.data.par_chunks_mut(face_size as usize).enumerate().for_each(|(row, dst)| {
-        let b = row_to_b(row as u32, face_size);
+        let mut sx = vec![0f32; face_size as usize];
+        let mut sy = vec![0f32; face_size as usize];
+        face_row_coords_simd(face, row as u32, face_size, eq.w, eq.h, &mut sx, &mut sy);
         for (col, slot) in dst.iter_mut().enumerate() {
-            let a = col_to_a(col as u32, face_size);
-            let (sx, sy) = face_source_coord(face, a, b, eq.w, eq.h);
-            *slot = nearest_u16(eq, sx, sy);
+            *slot = nearest_u16(eq, sx[col], sy[col]);
         }
     });
     out

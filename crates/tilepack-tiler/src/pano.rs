@@ -18,6 +18,8 @@ pub struct PanoOptions {
     pub tile_size: u16,
     /// WebP quality 0..=100.
     pub quality: f32,
+    /// libwebp method 0..=6, fastest to smallest.
+    pub method: u8,
     /// Per-face edge length. Defaults to `equirect_width / 4` (the legacy DZP
     /// convention). Determines pyramid depth and output resolution.
     pub face_size: Option<u32>,
@@ -28,6 +30,7 @@ impl Default for PanoOptions {
         PanoOptions {
             tile_size: 512,
             quality: 80.0,
+            method: 4,
             face_size: None,
         }
     }
@@ -106,7 +109,7 @@ pub fn convert_equirect(eq: &RgbSlab, opts: &PanoOptions) -> Result<Vec<u8>, Til
         .map(|w| {
             let level_slab = &face_pyramids[w.face][w.level as usize];
             let tile = crop_tile(level_slab, w.col, w.row, tile_size as u32);
-            let bytes = encode_webp(&tile, opts.quality)?;
+            let bytes = encode_webp(&tile, opts.quality, opts.method)?;
             Ok((w.ordinal, bytes))
         })
         .collect();

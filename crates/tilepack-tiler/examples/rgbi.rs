@@ -34,7 +34,14 @@ fn main() {
     let start = Instant::now();
 
     let rgb = decode_rgb(&read(&rgb_path)).unwrap_or_else(|e| fail("decode rgb", e));
-    let rgb_tpc = convert_planar(&rgb, &PlanarOptions { tile_size, quality: 80.0 }).unwrap_or_else(|e| fail("convert rgb", e));
+    let rgb_tpc = convert_planar(
+        &rgb,
+        &PlanarOptions {
+            tile_size,
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|e| fail("convert rgb", e));
     println!("rgb {}x{} -> {} bytes", rgb.w, rgb.h, rgb_tpc.len());
 
     // NIR arrives as a grayscale image; decode expands it to RGB, so the R
@@ -45,7 +52,7 @@ fn main() {
         exit(1);
     }
     let mut nir = U16Slab::new(nir_rgb.w, nir_rgb.h);
-    for (i, px) in nir_rgb.data.chunks_exact(3).enumerate() {
+    for (i, px) in nir_rgb.data.as_chunks::<3>().0.iter().enumerate() {
         nir.data[i] = px[0] as u16;
     }
     // 8-bit NIR -> gray8 WebP (no wasted high-byte plane). Sentinel 65535 is

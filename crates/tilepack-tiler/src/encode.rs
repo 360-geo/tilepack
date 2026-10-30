@@ -3,11 +3,16 @@
 use crate::TilerError;
 use crate::slab::RgbSlab;
 
-/// Encode an RGB slab as lossy WebP at `quality` (0..=100). Matches the
-/// production DZP tile codec (WebP q80).
-pub fn encode_webp(slab: &RgbSlab, quality: f32) -> Result<Vec<u8>, TilerError> {
+/// Encode an RGB slab as lossy WebP at `quality` (0..=100) and libwebp
+/// `method` (0..=6, fastest to smallest).
+pub fn encode_webp(slab: &RgbSlab, quality: f32, method: u8) -> Result<Vec<u8>, TilerError> {
+    let mut config = webp::WebPConfig::new().map_err(|_| TilerError::Io("webp config init".into()))?;
+    config.quality = quality;
+    config.method = method.min(6) as i32;
     let encoder = webp::Encoder::from_rgb(&slab.data, slab.w, slab.h);
-    let mem = encoder.encode(quality);
+    let mem = encoder
+        .encode_advanced(&config)
+        .map_err(|e| TilerError::Io(format!("webp encode: {e:?}")))?;
     Ok(mem.to_vec())
 }
 
@@ -37,7 +42,7 @@ pub enum Gray8Encoding {
 /// redundant planes cost almost nothing.
 pub fn encode_webp_gray8(gray: &[u8], w: u32, h: u32, mode: Gray8Encoding) -> Result<Vec<u8>, TilerError> {
     let mut rgb = vec![0u8; gray.len() * 3];
-    for (v, px) in gray.iter().zip(rgb.chunks_exact_mut(3)) {
+    for (v, px) in gray.iter().zip(rgb.as_chunks_mut::<3>().0) {
         px[0] = *v;
         px[1] = *v;
         px[2] = *v;

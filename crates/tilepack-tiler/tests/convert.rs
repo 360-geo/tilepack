@@ -26,6 +26,7 @@ fn convert_produces_valid_tilepack() {
         tile_size: 256,
         quality: 80.0,
         face_size: Some(512),
+        ..Default::default()
     };
     let tpc = convert_equirect(&eq, &opts).expect("convert");
 

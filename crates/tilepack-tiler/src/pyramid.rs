@@ -2,7 +2,7 @@
 //! (SIMD-accelerated Lanczos), coarse levels resampled from the next finer
 //! level rather than from the root.
 
-use fast_image_resize::images::Image;
+use fast_image_resize::images::{Image, ImageRef};
 use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 
 use crate::TilerError;
@@ -13,8 +13,7 @@ pub fn resize_rgb(src: &RgbSlab, dw: u32, dh: u32) -> Result<RgbSlab, TilerError
     if (dw, dh) == (src.w, src.h) {
         return Ok(src.clone());
     }
-    let src_img =
-        Image::from_vec_u8(src.w, src.h, src.data.clone(), PixelType::U8x3).map_err(|e| TilerError::Io(format!("resize src: {e}")))?;
+    let src_img = ImageRef::new(src.w, src.h, &src.data, PixelType::U8x3).map_err(|e| TilerError::Io(format!("resize src: {e}")))?;
     let mut dst = Image::new(dw, dh, PixelType::U8x3);
     let mut resizer = Resizer::new();
     let opts = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3));
