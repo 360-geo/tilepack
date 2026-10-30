@@ -36,6 +36,11 @@ All four (test / wasm build / clippy / fmt) must pass — they are the CI gates
 (`.github/workflows/ci.yaml`). The wasm gate only builds `-p tilepack`; the
 tiler is native-only by design.
 
+CI runs on our own AVX-512 server (`gz-ci`), so the kernels' parity tests reach
+the AVX-512 path. `rust-toolchain.toml` pins the version to match `argos` and
+`georizon_next`, which share that server's toolchain cache: bump them together.
+Publishing stays on GitHub-hosted runners, so its credentials never reach it.
+
 Dev tools are examples, not a CLI crate (deliberately — see git history):
 `cargo run -p tilepack-tiler --release --example inspect -- file.tpc`, and
 `repack` / `convert` / `rgbi` / `tiler_bench` likewise.

@@ -1,0 +1,6 @@
+# Pinned to the version argos and georizon_next use: the CI server keeps one
+# shared toolchain cache, and a pin stops new stable lints from failing CI.
+[toolchain]
+channel = "1.98.1"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
