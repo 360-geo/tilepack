@@ -157,7 +157,7 @@ mip of the same file level.
 
 ## Where the time goes
 
-Rough budget for an 8192x4096 panorama (face 2048, WebP q80, ~33 MP encoded):
+Rough budget for an 8192x4096 panorama (face 2048, ~33 MP encoded at WebP method 4, q80):
 
 | stage | cost | how it is handled |
 |-------|------|-------------------|
@@ -203,8 +203,8 @@ obliques (one per camera), 16 threads, with size interpolated to equal PSNR:
 q79.7 lands on the same size as method 4 at q80 (-0.12% over 12 obliques, three
 per camera) at ~2.7x the encode speed, for ~0.35 dB PSNR and SSIM 0.970 against
 0.975. No one setting holds that balance on all content, so re-check it when the
-source imagery changes. `PanoOptions` stays at method 4, q80 until the same
-check has run on real panoramas.
+source imagery changes. `PanoOptions` uses the same defaults; they were tuned on
+obliques and not measured on panoramas.
 
 `zenwebp` is also AGPL-3.0 or commercial, so it is no replacement for libwebp here.
 
