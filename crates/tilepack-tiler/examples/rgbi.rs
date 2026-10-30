@@ -34,7 +34,14 @@ fn main() {
     let start = Instant::now();
 
     let rgb = decode_rgb(&read(&rgb_path)).unwrap_or_else(|e| fail("decode rgb", e));
-    let rgb_tpc = convert_planar(&rgb, &PlanarOptions { tile_size, quality: 80.0 }).unwrap_or_else(|e| fail("convert rgb", e));
+    let rgb_tpc = convert_planar(
+        &rgb,
+        &PlanarOptions {
+            tile_size,
+            ..Default::default()
+        },
+    )
+    .unwrap_or_else(|e| fail("convert rgb", e));
     println!("rgb {}x{} -> {} bytes", rgb.w, rgb.h, rgb_tpc.len());
 
     // NIR arrives as a grayscale image; decode expands it to RGB, so the R

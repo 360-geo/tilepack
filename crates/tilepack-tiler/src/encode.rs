@@ -3,11 +3,16 @@
 use crate::TilerError;
 use crate::slab::RgbSlab;
 
-/// Encode an RGB slab as lossy WebP at `quality` (0..=100). Matches the
-/// production DZP tile codec (WebP q80).
-pub fn encode_webp(slab: &RgbSlab, quality: f32) -> Result<Vec<u8>, TilerError> {
+/// Encode an RGB slab as lossy WebP at `quality` (0..=100) and libwebp
+/// `method` (0..=6, fastest to smallest).
+pub fn encode_webp(slab: &RgbSlab, quality: f32, method: u8) -> Result<Vec<u8>, TilerError> {
+    let mut config = webp::WebPConfig::new().map_err(|_| TilerError::Io("webp config init".into()))?;
+    config.quality = quality;
+    config.method = method.min(6) as i32;
     let encoder = webp::Encoder::from_rgb(&slab.data, slab.w, slab.h);
-    let mem = encoder.encode(quality);
+    let mem = encoder
+        .encode_advanced(&config)
+        .map_err(|e| TilerError::Io(format!("webp encode: {e:?}")))?;
     Ok(mem.to_vec())
 }
 
