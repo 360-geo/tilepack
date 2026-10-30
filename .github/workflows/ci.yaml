@@ -5,48 +5,74 @@ on:
     branches: [master]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
+# Jobs run on our own server, label `gz-ci`, each in a fresh container. /cache
+# carries over between runs and is shared with other repositories: the cargo
+# registry, the toolchains, and one target dir per job. Pull requests from
+# outside the organisation need approval before they run here.
 jobs:
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: gz-ci
+    timeout-minutes: 20
+    env:
+      CARGO_TARGET_DIR: /cache/target/tilepack-test
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v7
+      - name: Take the job's target dir
+        run: tools/ci-lock-target-dir.sh
+      - name: Install the pinned toolchain
+        run: flock /cache/rustup.lock rustup toolchain install
       - run: cargo test
+      # Without this, a job landing on a CPU without AVX-512 would silently
+      # drop the kernels' AVX-512 parity coverage.
+      - name: Check the kernels ran at AVX-512
+        run: cargo run -p tilepack-tiler --example tiler_bench -- remap 256 | grep '16 f32 lanes'
 
   test-turbojpeg:
     name: Test (turbojpeg decode)
-    runs-on: ubuntu-latest
+    runs-on: gz-ci
+    timeout-minutes: 20
+    env:
+      CARGO_TARGET_DIR: /cache/target/tilepack-turbojpeg
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y nasm
+      - uses: actions/checkout@v7
+      - name: Take the job's target dir
+        run: tools/ci-lock-target-dir.sh
+      - name: Install the pinned toolchain
+        run: flock /cache/rustup.lock rustup toolchain install
       - run: cargo test -p tilepack-tiler --features turbojpeg
 
   wasm:
     name: Build tilepack for wasm32-unknown-unknown
-    runs-on: ubuntu-latest
+    runs-on: gz-ci
+    timeout-minutes: 10
+    env:
+      CARGO_TARGET_DIR: /cache/target/tilepack-wasm
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v7
+      - name: Take the job's target dir
+        run: tools/ci-lock-target-dir.sh
+      - name: Install the pinned toolchain
+        run: flock /cache/rustup.lock rustup toolchain install
       - run: cargo build -p tilepack --release --target wasm32-unknown-unknown
 
   lint:
     name: Clippy + fmt
-    runs-on: ubuntu-latest
+    runs-on: gz-ci
+    timeout-minutes: 20
+    env:
+      CARGO_TARGET_DIR: /cache/target/tilepack-clippy
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v7
+      - name: Take the job's target dir
+        run: tools/ci-lock-target-dir.sh
+      - name: Install the pinned toolchain
+        run: flock /cache/rustup.lock rustup toolchain install
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
