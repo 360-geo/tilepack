@@ -17,7 +17,7 @@ the ingest pipeline (writer). Sibling repo: [depthpack](https://github.com/360-g
   wasm-hostile crate.
 - `crates/tilepack-tiler` — native converter, repack, composition. Published
   to crates.io in lockstep with `tilepack` (same version, cut from one tag).
-  Has the heavy deps (libwebp, turbojpeg, fast_image_resize, pulp, depthpack)
+  Has the heavy deps (libwebp, turbojpeg, fast_image_resize, fearless_simd, depthpack)
   behind feature flags. Never imported by the viewer.
 - `fuzz/` — cargo-fuzz, non-workspace-member (own `[workspace]`).
 - `fixtures/golden.tpc` — byte-stable golden file (see below).
@@ -38,7 +38,7 @@ tiler is native-only by design.
 
 Dev tools are examples, not a CLI crate (deliberately — see git history):
 `cargo run -p tilepack-tiler --release --example inspect -- file.tpc`, and
-`repack` / `convert` / `rgbi` likewise.
+`repack` / `convert` / `rgbi` / `tiler_bench` likewise.
 
 ## Invariants — do not break these
 
@@ -62,6 +62,8 @@ Dev tools are examples, not a CLI crate (deliberately — see git history):
 
 ## Codec choices (learned from real data)
 
+- Obliques default to WebP method 1, q79.7: same size as method 4 at q80, ~2.7x
+  faster, ~0.35 dB lower. Storage is paid for years, so don't grow these files.
 - Display imagery: JPEG or WebP (lossy). Panorama fresh-convert to WebP q80 is
   ~55% smaller than the JPEG-era DZPs; repack of current WebP DZPs is
   lossless and just strips ZIP overhead (~0.3–0.6%).
@@ -75,8 +77,10 @@ Dev tools are examples, not a CLI crate (deliberately — see git history):
 - **Depth** → depthpack blobs (`convert_depth_*`). depthpack is for smooth
   fields; never use it for noisy imagery. Panorama depth is a cube or equirect
   untiled group; perspective depth is tiled + nearest downsample.
-- There is **no pure-Rust lossy WebP encoder**, so the `convert` feature links
-  libwebp (cc-only build). This is why the tiler is native-only.
+- There is **no permissively licensed pure-Rust lossy WebP encoder** that beats
+  libwebp (`zenwebp` is AGPL/commercial and lost on real obliques, see
+  docs/integration.md), so the `convert` feature links libwebp (cc-only build).
+  This is why the tiler is native-only.
 
 ## Gotchas
 
@@ -86,6 +90,10 @@ Dev tools are examples, not a CLI crate (deliberately — see git history):
   gen_golden` and review the diff — do not edit the bytes by hand.
 - The writer keeps `Cargo.lock` committed (deterministic CI). depthpack is a
   git dep pinned by rev.
+- `tilepack` stays on MSRV 1.87; `tilepack-tiler` is 1.89 for `fearless_simd`.
+- `remap::kernel` functions must stay `#[inline(always)]`: `dispatch!` enables
+  target features on its own body only, so an outlined helper silently loses
+  AVX-512.
 - Downsampling rules matter for correctness: display = any resampler; raw
   continuous (NIR/TIR) = nodata-aware mean; depth = nearest (never average
   across silhouettes). The `raster.rs` builders already encode this.

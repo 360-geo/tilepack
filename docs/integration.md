@@ -15,7 +15,7 @@ where its time and SIMD actually go.
   - `repack` (default) — lossless DZP/SZI remux. Pulls in `zip` + `quick-xml`.
   - `convert` (default) — decode, remap, pyramid, encode, depth, split16,
     composition. Pulls in `zune-jpeg`, `png`, `fast_image_resize`, `webp`
-    (libwebp via `cc`), `pulp`, `rayon`, and `depthpack`.
+    (libwebp via `cc`), `fearless_simd`, `rayon`, and `depthpack`.
   - `turbojpeg` (opt-in) — swaps JPEG decode to libjpeg-turbo. Faster than
     the pure-Rust `zune-jpeg`, but needs a C toolchain plus `nasm`. Native
     ingest wants it.
@@ -162,8 +162,8 @@ Rough budget for an 8192x4096 panorama (face 2048, WebP q80, ~33 MP encoded):
 | stage | cost | how it is handled |
 |-------|------|-------------------|
 | JPEG decode | ~250-400 ms zune, ~150 ms turbojpeg | existing codec SIMD |
-| equirect to cube remap (6 x 2048^2) | ~100-250 ms | scalar trig, `rayon` per-row + per-face |
-| pyramid (fast_image_resize Lanczos) | ~30-80 ms | SSE4/AVX2/NEON in the resizer |
+| equirect to cube remap (6 x 2048^2) | ~30-80 ms | `fearless_simd` kernels, `rayon` per-row + per-face |
+| pyramid (fast_image_resize Lanczos) | ~30-80 ms | SSE4/AVX2/NEON in the resizer, `rayon` per-level |
 | WebP encode (~33 MP of tiles) | ~3-4 core-seconds | libwebp SIMD, `rayon` per-tile |
 | assemble | negligible | single pass |
 
@@ -172,24 +172,77 @@ re-resample each level from the root (successive halving instead), and encode
 tiles in parallel across all cores — both done. Decode, resize, and encode all
 ride mature SIMD in their respective libraries; remap is fully parallelized.
 
-## The one hand-SIMD candidate
+A planar photo has no remap, so its budget is simply decode, pyramid and
+encode. For a real 151 MP Leica CityMapper oblique (14192x10640, 801 tiles,
+WebP q80, turbojpeg), single-threaded on a Ryzen 7 7700:
 
-The remap coordinate transform (`face_dir` then `atan2`/`acos` to equirect
-`(u, v)`) is the only stage that would benefit from a hand-written `pulp`
-kernel, following the usual branchless-polynomial pattern. It is deliberately
-not written yet: it is a non-dominant stage (encode is the ceiling), the
-numerics are delicate, and it needs real before/after benchmarking to justify.
-The scalar `remap::coords::face_row_coords` is structured as the parity oracle
-a future kernel is checked against. Do that work against a real fixture with
-the perf harness, not speculatively.
+| stage | cost | share |
+|-------|------|-------|
+| JPEG decode | ~0.9 s | ~6%, serial by nature |
+| pyramid | ~0.3 s | ~2%, parallel |
+| WebP encode | ~13.3 s | ~91%, parallel per tile |
+
+libwebp is the ceiling for planar conversion. Neither AVX-512 nor building the
+whole stack for x86-64-v4 changed encode time measurably on that CPU. Converting
+photos concurrently in the shared `rayon` pool does help: ~1.5x photos/s over
+one at a time on 16 threads, because decode runs serially per photo.
+
+Storage outweighs encode time for these files, so an encoder setting only earns
+its place if it does not grow them. Against libwebp method 4 at q80, on four
+obliques (one per camera), 16 threads, with size interpolated to equal PSNR:
+
+| encoder | speed | size at equal PSNR |
+|---------|-------|--------------------|
+| libwebp m6 | 0.32x | -1.9% |
+| libwebp m5 | 0.81x | -0.1% |
+| libwebp m1 | 2.71x | +3.5% |
+| zenwebp 0.4.6 m4 | 0.78x | +1.6% |
+| zenwebp 0.4.6 m6 | 0.28x | -0.5% |
+
+`PlanarOptions` therefore trades a little quality instead of size: method 1 at
+q79.7 lands on the same size as method 4 at q80 (-0.12% over 12 obliques, three
+per camera) at ~2.7x the encode speed, for ~0.35 dB PSNR and SSIM 0.970 against
+0.975. No one setting holds that balance on all content, so re-check it when the
+source imagery changes. `PanoOptions` stays at method 4, q80 until the same
+check has run on real panoramas.
+
+`zenwebp` is also AGPL-3.0 or commercial, so it is no replacement for libwebp here.
+
+## Hand SIMD
+
+The remap is the one stage with kernels of its own: the coordinate transform
+(`face_dir`, then `atan2` twice) and the bilinear sampler, in
+`remap::kernel`. One generic body runs at every `fearless_simd` level, 16 `f32`
+lanes on AVX-512. `remap::coords` stays the scalar parity oracle, and
+`remap_face_scalar` the reference path.
+
+On a Ryzen 7 7700 the kernels take the whole remap from 38 to 6.8 ns/px on one
+thread (5.6x). AVX-512 beats AVX2 by 1.6x on the coordinates but only 1.16x on
+the whole remap: the sampler's scalar texel fetches now dominate, at ~6 ns/px.
+Zen 4 also executes 512-bit operations on 256-bit units, so other CPUs may differ.
+
+`fearless_simd` takes its AVX-512 level only on the Ice Lake feature set
+(Ice Lake and newer, Zen 4 and newer). An x86-64-v4 CPU without it, such as
+Skylake-SP or Cascade Lake, runs the 8-lane AVX2 path.
 
 `split16` packing is left as a plain byte-strided loop: it autovectorizes and
 runs at ~1 GB/s, well below any stage that matters.
 
 ## Measuring
 
-The `convert` example prints wall time. For per-stage numbers, instrument with
-`std::time::Instant` around decode / remap+pyramid / encode and compare against
-the legacy converter on the same fixture (it has no timing of its own, so
-wrap it in a small harness for the baseline). Track results on fixed fixtures
-(an 8192x4096 and a 16384x8192 panorama, a large oblique) run over run.
+The `tiler_bench` example prints per-stage numbers in one process:
+
+```bash
+cargo run -p tilepack-tiler --release --features turbojpeg --example tiler_bench -- planar oblique.jpg
+```
+
+```bash
+cargo run -p tilepack-tiler --release --example tiler_bench -- remap 16384
+```
+
+`planar` also sweeps WebP method against size and PSNR, and compares converting
+a batch one photo at a time against all at once. `remap` compares the scalar
+oracle against the kernels. Track results on fixed fixtures (an 8192x4096 and a
+16384x8192 panorama, a large oblique) run over run. Compare against the legacy
+converter on the same fixture; it has no timing of its own, so wrap it in a
+small harness for the baseline.
