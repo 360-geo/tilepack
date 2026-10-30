@@ -42,7 +42,7 @@ pub enum Gray8Encoding {
 /// redundant planes cost almost nothing.
 pub fn encode_webp_gray8(gray: &[u8], w: u32, h: u32, mode: Gray8Encoding) -> Result<Vec<u8>, TilerError> {
     let mut rgb = vec![0u8; gray.len() * 3];
-    for (v, px) in gray.iter().zip(rgb.chunks_exact_mut(3)) {
+    for (v, px) in gray.iter().zip(rgb.as_chunks_mut::<3>().0) {
         px[0] = *v;
         px[1] = *v;
         px[2] = *v;

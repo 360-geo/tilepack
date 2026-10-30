@@ -161,7 +161,7 @@ fn sample<S: Simd>(simd: S, eq: &RgbSlab, sx: &[f32], sy: &[f32], dst: &mut [u8]
         let g = blend_channel::<S>(corners, 8, fx, fy);
         let b = blend_channel::<S>(corners, 16, fx, fy);
         let packed = r | (g << 8) | (b << 16);
-        for (px, v) in out.chunks_exact_mut(3).zip(packed.as_slice()) {
+        for (px, v) in out.as_chunks_mut::<3>().0.iter_mut().zip(packed.as_slice()) {
             px.copy_from_slice(&v.to_le_bytes()[..3]);
         }
     }
@@ -340,7 +340,7 @@ mod tests {
         for level in levels() {
             let mut got = vec![0u8; 67 * 3];
             sample_row_at(level, &eq, &sx, &sy, &mut got);
-            for (i, px) in got.chunks_exact(3).enumerate() {
+            for (i, px) in got.as_chunks::<3>().0.iter().enumerate() {
                 let want = sample_bilinear(&eq, sx[i], sy[i]);
                 for c in 0..3 {
                     assert!(

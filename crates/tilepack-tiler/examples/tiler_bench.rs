@@ -32,7 +32,7 @@ fn synthetic_equirect(w: u32, h: u32) -> RgbSlab {
     let mut data = vec![0u8; (w as usize) * (h as usize) * 3];
     data.par_chunks_mut(w as usize * 3).enumerate().for_each(|(y, row)| {
         let mut state = 0x9E37_79B9u32 ^ (y as u32).wrapping_mul(0x85EB_CA6B);
-        for (x, px) in row.chunks_exact_mut(3).enumerate() {
+        for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
@@ -89,7 +89,7 @@ fn synthetic_photo(megapixels: f64) -> RgbSlab {
     };
     data.par_chunks_mut(w as usize * 3).enumerate().for_each(|(y, row)| {
         let ty = mirror(y);
-        for (x, px) in row.chunks_exact_mut(3).enumerate() {
+        for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
             let i = (ty * SIZE + mirror(x + y / 2048 * 509)) * 3;
             px.copy_from_slice(&texture[i..i + 3]);
         }
