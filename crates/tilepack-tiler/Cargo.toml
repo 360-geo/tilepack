@@ -6,7 +6,7 @@ keywords = ["tiles", "pyramid", "panorama", "webp", "geospatial"]
 categories = ["encoding", "science::geo", "multimedia::images"]
 readme = "../../README.md"
 edition.workspace = true
-rust-version.workspace = true
+rust-version = "1.89"
 license.workspace = true
 repository.workspace = true
 
@@ -17,10 +17,10 @@ repack = ["dep:zip", "dep:quick-xml"]
 # Depth-only conversion: equirect->cube remap + depthpack encode + composition.
 # The lightweight subset for producers that only emit depth —
 # pulls in depthpack + rayon but NOT libwebp/cc.
-depth = ["dep:depthpack", "dep:rayon"]
+depth = ["dep:depthpack", "dep:rayon", "dep:fearless_simd"]
 # Source-image conversion: decode, equirect->cube remap, pyramid, tile encode.
 # Supersets `depth`.
-convert = ["depth", "dep:zune-jpeg", "dep:png", "dep:fast_image_resize", "dep:webp", "dep:pulp", "dep:bytemuck"]
+convert = ["depth", "dep:zune-jpeg", "dep:png", "dep:fast_image_resize", "dep:webp"]
 # Swap JPEG decode to libjpeg-turbo (faster than the pure-Rust zune-jpeg;
 # needs a C toolchain + nasm). Native ingest pipelines want this.
 turbojpeg = ["dep:turbojpeg"]
@@ -32,10 +32,9 @@ zip = { version = "6", default-features = false, features = ["deflate"], optiona
 quick-xml = { version = "0.37", optional = true }
 zune-jpeg = { version = "0.4", optional = true }
 png = { version = "0.17", optional = true }
-fast_image_resize = { version = "5", optional = true }
+fast_image_resize = { version = "5", features = ["rayon"], optional = true }
 webp = { version = "0.3", optional = true }
-pulp = { version = "0.21", optional = true }
-bytemuck = { version = "1", optional = true }
+fearless_simd = { version = "1.2", optional = true }
 rayon = { version = "1", optional = true }
 # version enables crates.io publish; git rev (pinned in Cargo.lock) is used for local/dev builds.
 depthpack = { version = "0.1", git = "https://github.com/360-geo/depthpack", optional = true }

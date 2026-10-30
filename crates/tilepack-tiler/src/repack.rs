@@ -287,11 +287,11 @@ fn read_archive(zip_bytes: &[u8]) -> Result<(HashMap<String, DziInfo>, TileMap),
             .map_err(|e| TilerError::Io(format!("read {name}: {e}")))?;
 
         let segments: Vec<&str> = name.split('/').filter(|s| !s.is_empty()).collect();
-        if let Some(last) = segments.last() {
-            if let Some(stem) = last.strip_suffix(".dzi") {
-                dzis.insert(stem.to_string(), parse_dzi(&bytes)?);
-                continue;
-            }
+        if let Some(last) = segments.last()
+            && let Some(stem) = last.strip_suffix(".dzi")
+        {
+            dzis.insert(stem.to_string(), parse_dzi(&bytes)?);
+            continue;
         }
         // Tile: {name}_files/{level}/{col}_{row}.{ext}, optionally with one
         // wrapper folder in front.

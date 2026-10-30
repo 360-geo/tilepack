@@ -50,13 +50,13 @@ fn main() {
             g.flags.untiled(),
             g.flags.nearest_downsample(),
         );
-        if let Some(u) = g.radiometry.unit_str() {
-            if !u.is_empty() {
-                println!(
-                    "      radiometry: value = count * {} + {}  unit={u:?}  nodata={}  window {}..{}",
-                    g.radiometry.scale, g.radiometry.offset, g.radiometry.nodata, g.radiometry.min, g.radiometry.max
-                );
-            }
+        if let Some(u) = g.radiometry.unit_str()
+            && !u.is_empty()
+        {
+            println!(
+                "      radiometry: value = count * {} + {}  unit={u:?}  nodata={}  window {}..{}",
+                g.radiometry.scale, g.radiometry.offset, g.radiometry.nodata, g.radiometry.min, g.radiometry.max
+            );
         }
     }
 

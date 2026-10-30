@@ -1,6 +1,7 @@
 //! Equirectangular panorama to cube-face remapping.
 
 pub mod coords;
+pub mod kernel;
 
 #[cfg(feature = "convert")]
 use rayon::prelude::*;
@@ -11,6 +12,8 @@ use tilepack::layout::Face;
 use crate::slab::RgbSlab;
 #[cfg(feature = "convert")]
 use coords::face_row_coords;
+#[cfg(feature = "convert")]
+use kernel::{face_row_coords_simd, sample_row};
 
 /// Bilinear sample of an equirectangular image. Longitude wraps at the seam;
 /// latitude clamps at the poles.
@@ -47,9 +50,26 @@ fn sample_bilinear(eq: &RgbSlab, sx: f32, sy: f32) -> [u8; 3] {
 }
 
 /// Render one cube face at `face_size x face_size` by sampling the equirect.
-/// Rows are processed in parallel.
+/// Rows are processed in parallel, each through the SIMD [`kernel`].
 #[cfg(feature = "convert")]
 pub fn remap_face(eq: &RgbSlab, face: Face, face_size: u32) -> RgbSlab {
+    let mut out = RgbSlab::new(face_size, face_size);
+    let row_stride = face_size as usize * 3;
+
+    out.data.par_chunks_mut(row_stride).enumerate().for_each(|(row, dst)| {
+        let mut sx = vec![0f32; face_size as usize];
+        let mut sy = vec![0f32; face_size as usize];
+        face_row_coords_simd(face, row as u32, face_size, eq.w, eq.h, &mut sx, &mut sy);
+        sample_row(eq, &sx, &sy, dst);
+    });
+
+    out
+}
+
+/// [`remap_face`] through the scalar oracle: the reference the kernels are
+/// tested and benchmarked against.
+#[cfg(feature = "convert")]
+pub fn remap_face_scalar(eq: &RgbSlab, face: Face, face_size: u32) -> RgbSlab {
     let mut out = RgbSlab::new(face_size, face_size);
     let row_stride = face_size as usize * 3;
 
