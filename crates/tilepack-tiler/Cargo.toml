@@ -28,7 +28,7 @@ turbojpeg = ["dep:turbojpeg"]
 [dependencies]
 tilepack = { workspace = true }
 thiserror = { workspace = true }
-zip = { version = "6", default-features = false, features = ["deflate"], optional = true }
+zip = { version = "9", default-features = false, features = ["deflate"], optional = true }
 quick-xml = { version = "0.37", optional = true }
 zune-jpeg = { version = "0.4", optional = true }
 png = { version = "0.17", optional = true }
@@ -41,4 +41,4 @@ depthpack = { version = "0.1", git = "https://github.com/360-geo/depthpack", opt
 turbojpeg = { version = "1", optional = true }
 
 [dev-dependencies]
-zip = { version = "6", default-features = false }
+zip = { version = "9", default-features = false }
